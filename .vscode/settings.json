@@ -1,0 +1,21 @@
+{
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk (WSL)",
+      "tools": ["latexmk-wsl"]
+    }
+  ],
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk-wsl",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "C:\\Users\\devan\\bayesCLV\\texts\\latexmk-wsl.cmd",
+        "%DOC%"
+      ]
+    }
+  ],
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.view.pdf.viewer": "tab"
+}

@@ -1,0 +1,142 @@
+% ============================================================
+% CHAPTER 4 — METHODOLOGY
+% ============================================================
+\chapter{Methodology}
+\label{ch:methodology}
+
+This chapter describes the empirical strategy used to evaluate the three hypotheses of Section~\ref{sec:hypotheses}. It specifies the research design, the dataset and its preparation, the Bayesian and baseline models, the inference procedure, and the evaluation protocol that links each metric to a hypothesis.
+
+\section{Research Design}
+\label{sec:design}
+
+The study adopts a \emph{calibration--holdout} predictive-validation design, the standard protocol for customer-base analysis \parencite{fader2005}. The transaction history is split chronologically at a fixed cut-off date: data before the cut-off (the \emph{calibration} period) are used to estimate every model, and data after it (the \emph{holdout} period) provide the ground truth against which predictions are scored. Because the split is temporal rather than random, the design measures genuine forecasting performance and precludes information leakage from the future into model fitting.
+
+All models are trained on identical calibration inputs and evaluated on identical holdout targets, so differences in performance are attributable to the models rather than to the data partition. The design directly instruments the three research questions: out-of-sample accuracy and uncertainty calibration (RQ1), per-segment error for the hierarchical extension (RQ2), and realised value under a targeting policy (RQ3).
+
+\section{Dataset}
+\label{sec:dataset}
+
+The empirical analysis uses the UCI \emph{Online Retail II} dataset, a transaction-level record of a UK-based online retailer spanning 1~December~2009 to 9~December~2011. The raw data comprise \num{1{,}067{,}371} line items across two annual sheets, with fields for invoice number, stock code, description, quantity, unit price, invoice timestamp, customer identifier, and country. The setting is non-contractual and episodic: customers purchase sporadically with no subscription, making activity status latent and the dataset an appropriate testbed for the probabilistic models of Chapter~\ref{ch:bayesian}.
+
+\section{Data Preparation}
+\label{sec:preparation}
+
+\subsection{Cleaning}
+\label{sec:cleaning}
+
+The raw transactions are cleaned in five steps, implemented in \texttt{src/data.py}: (i) rows with a missing customer identifier are dropped, since customer-level modelling is impossible without them; (ii) cancellations, identified by invoice numbers beginning with ``C'', are removed; (iii) non-product stock codes representing operational charges (postage, bank charges, manual adjustments, and similar) are filtered out; (iv) rows with non-positive quantity or price are discarded; and (v) line-level revenue is computed as quantity~$\times$~price. Cleaning reduces the data from \num{1{,}067{,}371} to \num{802{,}679} line items, removing \SI{24.8}{\percent} of rows. Figure~\ref{fig:cleaning} visualises the attrition at each step.
+
+\condfig{../outputs/eda/01_cleaning_waterfall.png}{0.8\linewidth}{Data-cleaning waterfall: the cumulative effect of each filtering step on the row count, from \num{1{,}067{,}371} raw line items to \num{802{,}679} retained transactions.}{fig:cleaning}
+
+\subsection{Temporal Split}
+\label{sec:split}
+
+The cleaned data are partitioned at \texttt{CAL\_END}~$=$~1~March~2011. The calibration period (1~December~2009 to 28~February~2011, \num{473{,}386} transactions) yields a maximum customer observation window of \num{65.1} weeks; the holdout period (1~March~2011 to 9~December~2011, \num{329{,}293} transactions) spans \num{40.4} weeks and defines the prediction horizon over which forecasts are scored. Figure~\ref{fig:timeseries} shows the monthly revenue series and the location of the split.
+
+\condfig{../outputs/eda/04_monthly_timeseries.png}{0.85\linewidth}{Monthly transaction revenue across the full observation window. The calibration/holdout boundary is fixed at 1~March~2011.}{fig:timeseries}
+
+\subsection{Customer-Level Aggregation}
+\label{sec:aggregation}
+
+Calibration transactions are collapsed to one row per customer, producing the summary statistics required by the BG/NBD and Gamma-Gamma models. Following the conventions of \textcite{fader2005} and \textcite{fader2013}:
+
+\begin{itemize}
+  \item \textbf{Frequency} ($x$) is the number of \emph{repeat} purchases, i.e.\ the count of purchase occasions minus one. One-time buyers have $x = 0$.
+  \item \textbf{Recency} ($t_x$) is the time, in weeks, from a customer's first to their last purchase.
+  \item \textbf{$T$} is the time, in weeks, from the first purchase to the end of the calibration period.
+  \item \textbf{Monetary value} ($m$) is the mean revenue per repeat transaction; the first purchase is excluded, per the Gamma-Gamma convention, and one-time buyers are assigned $m = 0$.
+\end{itemize}
+
+Aggregation yields \num{4{,}522} customers, of whom \SI{67.0}{\percent} are repeat purchasers and \SI{33.0}{\percent} are one-time buyers. The mean repeat-purchase frequency is \num{3.78} (median~1, maximum~200), reflecting the heavy right skew typical of retail. Among repeat purchasers, the mean value per transaction is \pounds\num{384.99} (median \pounds\num{298.52}). Time is expressed in weeks throughout (\texttt{time\_unit~=~"W"}).
+
+\subsection{Country Segmentation}
+\label{sec:segmentation}
+
+To support the hierarchical analysis (RQ2), customers are labelled by country. Countries with fewer than \num{30} customers are collapsed into an ``Other'' segment to avoid unstable per-segment estimates, yielding four segments: United Kingdom (\num{4{,}152} customers), Other (\num{242}), Germany (\num{74}), and France (\num{54}). The pronounced imbalance (the UK accounts for over \SI{91}{\percent} of customers) is exactly the regime in which partial pooling is expected to help the small segments (Figure~\ref{fig:country}).
+
+\section{Exploratory Findings}
+\label{sec:eda}
+
+Before modelling, the calibration sample is examined to characterise the input distributions and to test a key modelling assumption. The frequency distribution (Figure~\ref{fig:freqdist}) is heavily right-skewed, with most customers making few repeat purchases and a long tail of highly active buyers. The monetary distribution (Figure~\ref{fig:monetarydist}) is similarly right-skewed, motivating the Gamma-Gamma model's accommodation of skewed spend.
+
+\condfig{../outputs/eda/06_rfm_frequency.png}{0.7\linewidth}{Distribution of repeat-purchase frequency in the calibration sample. The mass at low frequencies and the long right tail are characteristic of non-contractual retail.}{fig:freqdist}
+
+\condfig{../outputs/eda/09_rfm_monetary.png}{0.7\linewidth}{Distribution of average transaction value among repeat purchasers. The right skew motivates the Gamma-Gamma specification.}{fig:monetarydist}
+
+\paragraph{Test of the Gamma-Gamma independence assumption.}
+The Gamma-Gamma model requires that purchase frequency and average transaction value be independent (Section~\ref{sec:gg-independence}). Empirically, the correlation between frequency and monetary value among repeat purchasers is weak: Pearson $r = 0.13$ and Spearman $\rho = 0.21$ (Figure~\ref{fig:rfm-corr}). The association is small enough that the independence assumption is approximately satisfied, but the mildly positive sign indicates that more frequent buyers spend slightly more per order; this caveat is revisited when interpreting the monetary-model results and in the limitations (Section~\ref{sec:limitations}).
+
+\section{Model Specification}
+\label{sec:specification}
+
+Three Bayesian models are implemented in PyMC (\texttt{src/models.py}), following the generative structure of Chapter~\ref{ch:bayesian}.
+
+\paragraph{Pooled BG/NBD.}
+The standard BG/NBD likelihood \parencite{fader2005} is implemented directly as a \texttt{Potential}, with population parameters $r, \alpha, a, b$ each assigned weakly informative half-normal priors, $\text{HalfNormal}(\sigma = 10)$. The latent per-customer transaction rate and dropout probability are integrated out analytically, so the sampler operates only on the four population parameters.
+
+\paragraph{Hierarchical BG/NBD.}
+The hierarchical variant places the four BG/NBD parameters at the country-segment level, each drawn from a shared hyperprior. To avoid the funnel geometry described in Section~\ref{sec:noncentered}, a non-centred parameterisation is used: standardised normal offsets $z \sim \text{Normal}(0,1)$ per segment are scaled and shifted by the hyperparameters and mapped to the positive reals via a softplus transform. This yields segment-specific $(r, \alpha, a, b)$ while permitting partial pooling toward the global mean.
+
+\paragraph{Gamma-Gamma.}
+The Gamma-Gamma monetary model \parencite{fader2013} is fitted only on repeat purchasers ($x > 0$), since average transaction value is undefined for one-time buyers. Its three population parameters $(p, q, \gamma)$ receive half-normal priors. CLV for one-time buyers imputes the population mean spend.
+
+\section{Bayesian Inference}
+\label{sec:inference}
+
+All posteriors are obtained by Hamiltonian Monte Carlo using the No-U-Turn Sampler (Section~\ref{sec:mcmc}). Each model is sampled with \num{4} chains of \num{2000} draws following \num{2000} tuning iterations, a target acceptance probability of \num{0.9}, and a fixed random seed of \num{42} for reproducibility. Convergence is assessed with the diagnostics of Section~\ref{sec:mcmc}: split-$\widehat{R}$ (convergence requires values below \num{1.01}), effective sample size, the number of divergent transitions, and the Bayesian fraction of missing information. These diagnostics are reported in Section~\ref{sec:results-diagnostics} and determine whether reparameterisation was required for the hierarchical model.
+
+\section{Baseline Models}
+\label{sec:baselines}
+
+Four non-Bayesian baselines (\texttt{src/baselines.py}) contextualise the probabilistic models:
+
+\begin{itemize}
+  \item \textbf{Naive (mean).} Predicts the population-average purchase rate and average spend for every customer; a lower bound on useful performance.
+  \item \textbf{RFM heuristic.} Scores customers into quintiles on recency, frequency, and monetary value, and projects future transactions from a composite score scaled by the base purchase rate.
+  \item \textbf{XGBoost (two-stage).} Gradient-boosted trees trained on engineered features (core RFM, derived ratios, inter-purchase-time statistics, and day-of-week/spend-trend temporal features), with separate models for the holdout transaction count and per-transaction spend, combined multiplicatively into CLV. This mirrors the BG/NBD~$+$~Gamma-Gamma decomposition, making the Bayesian-versus-ML comparison clean.
+  \item \textbf{Pareto/NBD (optional).} The maximum-likelihood predecessor to BG/NBD, included where the \texttt{lifetimes} library is available.
+\end{itemize}
+
+\section{Prediction}
+\label{sec:prediction}
+
+For the Bayesian models, predictions are computed as expectations over the posterior. For each posterior draw, the conditional expected number of transactions over the holdout horizon, $E[X(t) \mid x, t_x, T]$, and the probability of being alive, $P(\text{alive})$, are evaluated for every customer; the Gamma-Gamma posterior yields the expected per-transaction value. Customer-level CLV is the product of the expected transaction count and expected value (Equation~\ref{eq:clv-product}). Because the computation is performed per draw, every prediction is itself a posterior distribution, from which means, credible intervals, and the targeting probability $P(\text{CLV} > c)$ are derived.
+
+\section{Evaluation Protocol}
+\label{sec:evaluation}
+
+Models are scored on the holdout period using a suite of metrics (\texttt{src/evaluation.py}), each mapped to a hypothesis (Table~\ref{tab:metric-map}).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Mapping of evaluation metrics to research hypotheses.}
+  \label{tab:metric-map}
+  \begin{tabularx}{\linewidth}{@{}l Y@{}}
+    \toprule
+    \textbf{Hypothesis} & \textbf{Metrics} \\
+    \midrule
+    H1 (accuracy + uncertainty) & MAE, RMSE, MAPE for transactions and CLV; Spearman and Gini for ranking; NDCG@$k$; credible-interval coverage and mean interval width; CRPS; $P(\text{alive})$ AUC and Brier score; decile calibration tables \\
+    \addlinespace
+    H2 (hierarchical pooling) & Per-country MAE for each model; posterior shrinkage of segment parameters toward the global mean \\
+    \addlinespace
+    H3 (decision-theoretic targeting) & Cumulative realised net value under point-estimate, posterior-probability, and oracle targeting, swept over targeting depth and intervention cost; targeting lift \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\paragraph{Accuracy and ranking.}
+Mean absolute error and root mean squared error measure point accuracy for both holdout transactions and CLV; the Gini coefficient and Spearman correlation measure ranking quality, and NDCG@100 and NDCG@500 measure top-$k$ ranking relevant to targeting.
+
+\paragraph{Uncertainty calibration.}
+For the Bayesian models, credible-interval coverage compares the nominal and empirical coverage of posterior predictive intervals (well-calibrated intervals achieve coverage close to nominal), the mean interval width quantifies sharpness, and the continuous ranked probability score (CRPS) jointly rewards accuracy and calibration. These metrics operationalise the ``calibrated uncertainty'' claim of H1, which point-prediction baselines cannot satisfy.
+
+\paragraph{Activity classification.}
+$P(\text{alive})$ is evaluated as a binary classifier of holdout activity (a customer is active if they make at least one holdout purchase; \SI{59.0}{\percent} of customers, \num{2{,}670} of \num{4{,}522}, are active) using AUC and the Brier score.
+
+\paragraph{Decision-theoretic targeting.}
+For H3, a targeting simulation ranks customers by (i) posterior mean CLV, (ii) the posterior probability $P(\text{CLV} > c)$, and (iii) realised value (oracle), and reports the cumulative net value captured at targeting depths of $5$--$50\%$. The intervention cost $c$ is swept over $\{\pounds 5, \pounds 20, \pounds 50\}$ to ensure the conclusion is robust to the cost assumption, with $\pounds 20$ as the headline case.
+
+\section{Implementation and Reproducibility}
+\label{sec:implementation}
+
+The pipeline is implemented in Python using PyMC~5 for inference, ArviZ for posterior handling and diagnostics, scikit-learn and XGBoost for baselines, and Matplotlib for figures. The full analysis is orchestrated by \texttt{src/run\_all\_models.py}, which executes data preparation, MCMC sampling, prediction, evaluation, table generation, and plotting as a single reproducible sequence. All stochastic components use fixed seeds, posterior traces are serialised to NetCDF, and result tables are exported as both CSV and \LaTeX{} for direct inclusion in this document.

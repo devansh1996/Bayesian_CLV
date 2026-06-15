@@ -1,0 +1,631 @@
+% ============================================================
+% Master Thesis LaTeX Template
+% Hochschule für Technik und Wirtschaft Berlin (HTW Berlin)
+% Master Project Management and Data Science
+% ============================================================
+% Compile with: pdflatex -> biber -> pdflatex -> pdflatex
+% Or use latexmk: latexmk -pdf masters_thesis_template.tex
+% ============================================================
+
+\documentclass[12pt, a4paper, oneside]{report}
+
+% ── Encoding & Language ──────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+
+% ── Fonts ────────────────────────────────────────────────────
+\usepackage{mathptmx}           % Times-like font (common for German theses)
+% Alternative: \usepackage{helvet} \renewcommand{\familydefault}{\sfdefault}
+
+% ── Page Geometry ────────────────────────────────────────────
+\usepackage[
+    top=2.5cm,
+    bottom=2.5cm,
+    left=3cm,
+    right=2.5cm,
+    headheight=15pt
+]{geometry}
+
+% ── Spacing ──────────────────────────────────────────────────
+\usepackage{setspace}
+\onehalfspacing                 % 1.5 line spacing (standard for German theses)
+
+% ── Headers & Footers ───────────────────────────────────────
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\fancypagestyle{plain}{         % For chapter opening pages
+    \fancyhf{}
+    \fancyhead[R]{\thepage}
+    \renewcommand{\headrulewidth}{0pt}
+}
+
+% ── Graphics & Colors ───────────────────────────────────────
+\usepackage{graphicx}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{float}
+
+% Define HTW green color (from the logo)
+\definecolor{htwgreen}{RGB}{118, 185, 0}
+
+% ── Tables ───────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{array}
+
+% ── Math ─────────────────────────────────────────────────────
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% ── Code Listings (optional) ────────────────────────────────
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{gray!10},
+    frame=single,
+    breaklines=true,
+    captionpos=b,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+}
+
+% ── Bibliography ─────────────────────────────────────────────
+\usepackage[
+    backend=biber,
+    style=apa,                  % APA style (common for social science / business theses)
+    sorting=nyt,
+    natbib=true
+]{biblatex}
+\addbibresource{references.bib} % Your .bib file
+
+% ── Hyperlinks & PDF metadata ───────────────────────────────
+\usepackage[
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue,
+    bookmarks=true,
+    pdfauthor={Naman Mathpal},
+    pdftitle={Data-Driven Customer Segmentation for Personalized Marketing in Fashion E-commerce}
+]{hyperref}
+
+% ── Captions ─────────────────────────────────────────────────
+\usepackage[
+    font=small,
+    labelfont=bf,
+    format=hang
+]{caption}
+\usepackage{subcaption}
+
+% ── Table of Contents depth ─────────────────────────────────
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{3}
+
+% ── Paragraph formatting ────────────────────────────────────
+\setlength{\parindent}{0pt}     % No paragraph indent (common in German theses)
+\setlength{\parskip}{6pt}       % Space between paragraphs
+
+% ── Chapter/Section formatting ──────────────────────────────
+\usepackage{titlesec}
+
+\titleformat{\chapter}[display]
+    {\normalfont\Large\bfseries}
+    {\chaptertitlename\ \thechapter}{0pt}{\LARGE}
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+\titleformat{\section}
+    {\normalfont\large\bfseries}{\thesection}{1em}{}
+
+\titleformat{\subsection}
+    {\normalfont\normalsize\bfseries}{\thesubsection}{1em}{}
+
+\titleformat{\subsubsection}
+    {\normalfont\normalsize\bfseries}{\thesubsubsection}{1em}{}
+
+% ── Miscellaneous ────────────────────────────────────────────
+\usepackage{enumitem}           % Better list control
+\usepackage{csquotes}           % Required by biblatex
+\usepackage{pdfpages}           % Include external PDFs (e.g., signed declaration)
+\usepackage{nomencl}            % Abbreviations list (optional)
+
+
+% ============================================================
+%                     DOCUMENT BEGINS
+% ============================================================
+\begin{document}
+
+% ── Front matter: no page numbers ───────────────────────────
+\pagenumbering{gobble}
+
+% ============================================================
+% TITLE PAGE
+% ============================================================
+\begin{titlepage}
+    \centering
+
+    % ── University Logo ──────────────────────────────────────
+    % Replace with your actual HTW logo file
+    % Download from: https://corporatedesign.htw-berlin.de/
+    % \includegraphics[width=5cm]{htw_logo.png}
+    \fbox{\parbox{5cm}{\centering\vspace{1.5cm}HTW Berlin Logo\vspace{1.5cm}}}
+
+    \vspace{0.5cm}
+
+    % ── Horizontal rules ────────────────────────────────────
+    {\color{htwgreen}\hrule height 2pt}
+    \vspace{0.3cm}
+    {\color{htwgreen}\hrule height 2pt}
+
+    \vspace{2cm}
+
+    % ── Title ────────────────────────────────────────────────
+    {\LARGE\bfseries Data-Driven Customer Segmentation for Personalized Marketing in Fashion E-commerce\par}
+
+    \vspace{2cm}
+
+    {\Large\bfseries Master Thesis\par}
+
+    \vspace{1.5cm}
+
+    {\large\bfseries Name of the Study Program\par}
+    {\large Master Project Management and Data Science\par}
+    {\large Faculty 3\par}
+
+    \vfill
+
+    % ── Author info (right-aligned) ─────────────────────────
+    \begin{flushright}
+        {\large\bfseries From:}\\[0.3cm]
+        {\large Naman Mathpal (S0590500)}\\[1cm]
+        {\large\bfseries Dated:}\\[0.3cm]
+        {\large Berlin, 03.08.2025}\\[1cm]
+        {\large 1st Supervisor: Prof.\ Dr.\ Tilo Wendler}\\
+        {\large 2nd Supervisor: Dr.\ Stefan Kluckner}
+    \end{flushright}
+
+    \vspace{1cm}
+\end{titlepage}
+
+
+% ============================================================
+% TABLE OF CONTENTS
+% ============================================================
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+\tableofcontents
+\newpage
+
+% ── List of Tables ──────────────────────────────────────────
+\listoftables
+\addcontentsline{toc}{chapter}{List of Tables}
+\newpage
+
+% ── List of Figures ─────────────────────────────────────────
+\listoffigures
+\addcontentsline{toc}{chapter}{List of Figures}
+\newpage
+
+
+% ============================================================
+% MAIN CONTENT
+% ============================================================
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+
+% ────────────────────────────────────────────────────────────
+\chapter{Introduction}
+% ────────────────────────────────────────────────────────────
+
+In today's rapidly evolving business landscape, the fundamental goal of every enterprise remains unchanged: to acquire new customers while ensuring the continuous satisfaction of existing ones by delivering products and services that align perfectly with customer expectations.
+
+As the renowned management expert Peter F.\ Drucker \citeyearpar{drucker1973} once stated: \textit{``The aim of marketing is to know and understand the customer so well that the product or service fits him and sells itself.''} This profound insight underscores the critical importance of customer understanding in achieving business success.
+
+% Example figure
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.7\textwidth]{figures/crisp_dm.png}
+    \fbox{\parbox{0.7\textwidth}{\centering\vspace{3cm}CRISP-DM Framework Placeholder\vspace{3cm}}}
+    \caption{CRISP DM Framework}
+    \label{fig:crisp_dm}
+\end{figure}
+
+
+\section{Understanding Customer Segmentation}
+
+The answer to this fundamental business challenge lies in customer segmentation---a strategic approach that has proven indispensable in modern marketing practices. Customer segmentation, also known as market segmentation, represents the process of dividing a heterogeneous customer base into smaller, more homogeneous groups based on shared characteristics or behaviors.
+
+
+\section{Historical Evolution and Development}
+
+The evolution of customer segmentation has been remarkable since its inception in the 1950s. Initially, businesses relied on basic demographic and geographic segmentation approaches.
+
+
+\section{Critical Importance in Modern E-commerce}
+
+In today's digital economy, the importance of customer segmentation has reached unprecedented levels, particularly within the e-commerce sector.
+
+\subsection{Competitive Differentiation}
+In an era of intense global competition, businesses must identify innovative approaches to understand and strengthen relationships with their customers.
+
+\subsection{Resource Optimization}
+Effective segmentation enables businesses to identify their most valuable customers and allocate resources strategically.
+
+\subsection{Personalization Capabilities}
+Modern e-commerce platforms leverage segmentation to deliver personalized experiences.
+
+\subsection{Dynamic Market Adaptation}
+The digital marketplace evolves rapidly, with customer preferences and behaviors changing continuously.
+
+
+\section{Research Contribution and Thesis Overview}
+
+This thesis addresses a critical gap in the current understanding of customer segmentation methodologies specifically within the fashion e-commerce industry.
+
+The primary research question guiding this investigation is: \textit{``Which customer segmentation model most effectively supports personalized marketing strategies in fashion e-commerce?''}
+
+This research question encompasses several important sub-questions:
+\begin{itemize}
+    \item How do different segmentation models perform across technical and business evaluation metrics?
+    \item Which model provides the most actionable customer insights for fashion retailers?
+    \item What practical implications do these findings have for marketing strategy development?
+\end{itemize}
+
+
+\section{Thesis Structure and Reader Expectations}
+
+This thesis is structured to provide readers with a comprehensive understanding of customer segmentation methodologies.
+
+
+% ────────────────────────────────────────────────────────────
+\chapter{Literature Review}
+% ────────────────────────────────────────────────────────────
+
+Customer segmentation represents one of the most fundamental and enduring concepts in modern marketing theory and practice.
+
+\section{Customer Segmentation}
+
+\subsection{What is Customer Segmentation}
+
+Customer segmentation fundamentally addresses the core challenge that customers are inherently diverse in their characteristics, preferences, behaviors, and value to organizations.
+
+\subsection{Types of Customer Segmentation}
+
+The selection of appropriate segmentation criteria represents one of the most critical decisions in the segmentation process.
+
+
+\section{RFM Segmentation}
+
+RFM analysis represents one of the most established and widely adopted customer segmentation methodologies in marketing practice.
+
+\subsection{What is RFM}
+
+RFM analysis, which stands for Recency, Frequency, and Monetary, constitutes a behavioral segmentation technique that evaluates customer value through three fundamental dimensions.
+
+\subsection{RFM in Practice}
+
+The practical implementation of RFM analysis involves systematic calculation of the three variables, sorting and scoring procedures, and consolidation into final RFM scores.
+
+
+\section{LRFMP Segmentation}
+
+The LRFMP model emerged from recognition that traditional RFM analysis, while effective, may not capture all relevant dimensions of customer behavior.
+
+
+\section{RFM vs LRFMP Comparison}
+
+The evolution from RFM to LRFMP represents a significant advancement in customer segmentation sophistication.
+
+
+\section{Cluster Analysis}
+
+Cluster analysis represents a fundamental unsupervised learning technique that plays a crucial role in contemporary customer segmentation methodologies.
+
+
+\section{K-means Clustering}
+
+K-means clustering stands as the most widely adopted and thoroughly researched clustering algorithm in customer segmentation applications.
+
+The K-means algorithm seeks to minimize the within-cluster sum of squared errors (SSE):
+
+\begin{equation}
+    SSE = \sum_{i=1}^{k} \sum_{x \in C_i} \|x - \mu_i\|^2
+    \label{eq:sse}
+\end{equation}
+
+Where $k$ represents the number of clusters, $C_i$ represents the $i$-th cluster, and $\mu_i$ represents the centroid of cluster $C_i$.
+
+
+\section{Summary}
+
+This literature review establishes the theoretical foundation for customer segmentation methodologies.
+
+
+% ────────────────────────────────────────────────────────────
+\chapter{Methodology}
+% ────────────────────────────────────────────────────────────
+
+This chapter outlines the systematic approach employed to compare different customer segmentation models for fashion e-commerce applications.
+
+\section{Business and Data Understanding}
+
+\subsection{Business Context and Objectives}
+
+The analysis utilizes transaction data from a small-to-medium scale fashion e-commerce platform.
+
+\subsection{Dataset Overview and Characteristics (EDA)}
+
+The dataset captures comprehensive customer transaction behavior over a complete annual cycle.
+
+% Example table
+\begin{table}[H]
+    \centering
+    \caption{Summary of Dataset}
+    \label{tab:dataset_summary}
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{Attribute} & \textbf{Value} \\
+        \midrule
+        Total Records           & 3,400 transactions \\
+        Observation Period      & 12 months (October 2022 -- October 2023) \\
+        Unique Customers        & 166 customers \\
+        Product Categories      & 50 distinct fashion items \\
+        Data Granularity        & Transaction-level records \\
+        Business Type           & Fashion e-commerce platform \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% Example of a more complex table
+\begin{table}[H]
+    \centering
+    \caption{RFM Summary Statistics}
+    \label{tab:rfm_stats}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Variable} & \textbf{Mean} & \textbf{Std Dev} & \textbf{Min} & \textbf{Max} \\
+        \midrule
+        Recency     & 19.73   & 19.37  & 1       & 117 \\
+        Frequency   & 20.48   & 4.36   & 10      & 34 \\
+        Monetary    & 2154.88 & 514.11 & 1132.48 & 3680.89 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+
+\section{Data Preparation}
+
+In this step the author handles the inconsistencies in the dataset for further processing and model building.
+
+\subsection{Imputation of Missing Values}
+
+The mean imputation based on category made the most sense in this case since price is an important feature in the dataset.
+
+\subsection{RFM Calculation}
+
+This study used the RFM approach (Recency, Frequency and Monetary) values of each customer.
+
+\subsection{LRFMP Calculation}
+
+The LRFMP analytical framework extends traditional RFM analysis by incorporating two additional behavioral dimensions: Length and Periodicity.
+
+\subsection{RFM and LRFMP Comparison}
+
+To determine the optimal customer segmentation approach, this study conducted a comprehensive comparative analysis.
+
+
+\section{K-Means Clustering}
+
+After completing data preprocessing, outlier treatment, and standardization, the dataset was prepared for K-means clustering analysis.
+
+\subsection{Optimal Cluster Number Determination}
+
+The analysis tested cluster numbers ranging from $k=2$ to $k=10$.
+
+% Example figure with elbow plot placeholder
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.8\textwidth]{figures/elbow_plot.png}
+    \fbox{\parbox{0.8\textwidth}{\centering\vspace{4cm}Elbow Analysis Plot Placeholder\vspace{4cm}}}
+    \caption{Elbow analysis, selected K=3 for segmentation}
+    \label{fig:elbow}
+\end{figure}
+
+The Min-Max scaling transformation is implemented using the following formula:
+\begin{equation}
+    x_{scaled} = \frac{x - x_{min}}{x_{max} - x_{min}}
+    \label{eq:minmax}
+\end{equation}
+
+
+\section{Summary}
+
+This methodology chapter operationalizes the theoretical frameworks from the literature review.
+
+
+% ────────────────────────────────────────────────────────────
+\chapter{Results and Recommendations}
+% ────────────────────────────────────────────────────────────
+
+\section{Clustering Results}
+
+Following the implementation of K-means clustering algorithm on the standardized LRFMP data using K-means++ initialization with $k=3$, three distinct customer clusters emerged.
+
+\section{Detailed Cluster Statistics and Performance Analysis}
+
+% Example of cluster results table
+\begin{table}[H]
+    \centering
+    \caption{Clustering Statistics}
+    \label{tab:clustering_stats}
+    \begin{tabular}{cccccccl}
+        \toprule
+        \textbf{Cluster} & \textbf{Size} & \textbf{\%} & \textbf{Avg L} & \textbf{Avg R} & \textbf{Avg F} & \textbf{Avg M} & \textbf{Pattern} \\
+        \midrule
+        0 & 88  & 53.0\% & 337.18 & 15.07 & 23.56 & \$106.62 & L$\uparrow$R$\uparrow$F$\uparrow$M$\uparrow$P$\uparrow$ \\
+        1 & 20  & 12.0\% & 286.75 & 58.65 & 17.05 & \$105.53 & L$\downarrow$R$\downarrow$F$\downarrow$M$\to$P$\downarrow$ \\
+        2 & 58  & 34.9\% & 334.83 & 13.38 & 17.00 & \$102.89 & L$\uparrow$R$\uparrow$F$\downarrow$M$\downarrow$P$\downarrow$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+
+\section{Customer Segment Profiling and Strategic Recommendations}
+
+Based on the comprehensive clustering analysis, three distinct customer segments emerge.
+
+\textbf{Cluster 0: Champion Customers (88 customers, 53.0\%)} \\
+The Champion customer segment represents the fashion retail business's most valuable and engaged customer base.
+
+\textbf{Cluster 1: At-Risk Customers (20 customers, 12.0\%)} \\
+The At-Risk customer segment represents the most concerning group, exhibiting multiple indicators of potential churn.
+
+\textbf{Cluster 2: Potential Growth Customers (58 customers, 34.9\%)} \\
+The Potential Growth segment demonstrates mixed engagement characteristics with significant opportunity for value enhancement.
+
+
+\section{Enhanced Segmentation Value and Business Impact}
+
+The LRFMP clustering analysis demonstrates significant advantages over traditional segmentation approaches.
+
+
+\section{Possible Next Steps, Enhancements and Use Case Ideas}
+
+\subsection{Fashion-Specific Positioning Strategies}
+Fashion retail positioning strategies should leverage the enhanced insights provided by LRFMP segmentation.
+
+\subsection{Predictive Customer Lifecycle Management}
+The LRFMP segmentation results provide an excellent foundation for developing predictive models.
+
+
+\section{Summary}
+
+The results chapter validates the methodological approach by successfully implementing K-means clustering on the standardized LRFMP dataset.
+
+
+% ────────────────────────────────────────────────────────────
+\chapter{Final Summary}
+% ────────────────────────────────────────────────────────────
+
+This thesis was fundamentally motivated by the objective of integrating enhanced analytical frameworks with advanced machine learning techniques to improve customer segmentation effectiveness in fashion e-commerce environments.
+
+
+\section{Enhanced Analytical Framework Development}
+
+Among the range of available market segmentation practices, RFM analysis has established itself as a popular and powerful tool.
+
+
+\section{Research Questions and Key Findings}
+
+This thesis systematically addressed three fundamental research questions.
+
+
+\section{Business Impact and Strategic Applications}
+
+The case study demonstrates clear practical benefits of the enhanced analytical approach for fashion retail customer segmentation.
+
+
+% ============================================================
+% BIBLIOGRAPHY
+% ============================================================
+\newpage
+\addcontentsline{toc}{chapter}{List of Literature}
+\printbibliography[title={List of Literature}]
+
+
+% ============================================================
+% APPENDIX (optional)
+% ============================================================
+\appendix
+\chapter{Appendix}
+
+\section{AI Tool Usage Declaration}
+
+\begin{table}[H]
+    \centering
+    \caption{AI Tools Used in This Thesis}
+    \label{tab:ai_tools}
+    \begin{tabularx}{\textwidth}{llX}
+        \toprule
+        \textbf{AI Tool} & \textbf{Form of Use} & \textbf{Affected Sections} \\
+        \midrule
+        Claude AI Research & Text Generation, Text enhancement, finding citations & Literature Review, Methodology, Results, Introduction, Final Summary \\
+        \addlinespace
+        Claude AI Opus 4 & Python programming, debugging, Notebook assortment & Methodology, EDA, Evaluation, Results \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+
+% ============================================================
+% STATUTORY DECLARATION
+% ============================================================
+\newpage
+\addcontentsline{toc}{chapter}{Statutory Declaration}
+\chapter*{Statutory Declaration}
+
+I hereby declare that I have prepared all parts of this thesis independently and have not used any sources or aids other than those specified in the thesis, and that the thesis has not been submitted in the same or a similar form in any other examination. All verbatim or in-sentence copies and quotations, as well as all sections that were designed, written and/or edited with the help of AI-based tools, have been identified and verified.
+
+\vspace{1cm}
+
+\textbf{Information on the use of AI-based tools}
+
+\vspace{0.5cm}
+
+In the appendix of my work, I have listed all AI-based resources. These are identified with product names. I assure that I have not used any AI-based tools whose use has been explicitly excluded in writing by the examiner. I understand that the use of texts or other content and products generated by AI-based tools does not guarantee their quality. I am fully responsible for the adoption of any machine generated passages used by me and bear the responsibility for any erroneous or distorted content, faulty references, violations of data protection and copyright law or plagiarism generated by the AI. I also affirm that my creative influence predominates in the present work.
+
+\vspace{2cm}
+
+\noindent
+\begin{tabular}{p{6cm}p{2cm}p{6cm}}
+    \hrulefill & & \hrulefill \\
+    \textbf{Student Name} & & \textbf{Place, Date} \\
+    Naman Mathpal & & Berlin, 03.08.2025 \\
+\end{tabular}
+
+\vspace{2cm}
+
+\noindent
+\hrulefill \\
+\textbf{Signature}
+
+\end{document}
+
+
+% ============================================================
+% SAMPLE references.bib FILE
+% ============================================================
+% Create a file named "references.bib" with entries like:
+%
+% @book{drucker1973,
+%   author    = {Drucker, Peter F.},
+%   title     = {Management: Tasks, Responsibilities, Practices},
+%   year      = {1973},
+%   publisher = {Harper \& Row},
+%   address   = {New York}
+% }
+%
+% @article{smith1956,
+%   author  = {Smith, Wendell R.},
+%   title   = {Product Differentiation and Market Segmentation as Alternative Marketing Strategies},
+%   journal = {Journal of Marketing},
+%   year    = {1956},
+%   volume  = {21},
+%   number  = {1},
+%   pages   = {3--8}
+% }
+%
+% @article{peker2017,
+%   author  = {Peker, Serhat and Kocyigit, Altan and Eren, Pekin Erhan},
+%   title   = {LRFMP model for customer segmentation in the grocery retail industry},
+%   journal = {Social Network Analysis and Mining},
+%   year    = {2017},
+%   volume  = {7},
+%   pages   = {1--11}s
+% }

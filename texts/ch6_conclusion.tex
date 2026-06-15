@@ -1,0 +1,46 @@
+% ============================================================
+% CHAPTER 6 — DISCUSSION AND CONCLUSION
+% ============================================================
+\chapter{Discussion and Conclusion}
+\label{ch:conclusion}
+
+This final chapter synthesises the empirical findings, situates them within the theoretical framework of Chapters~\ref{ch:foundations} and~\ref{ch:bayesian}, and draws out the contributions, limitations, and avenues for further work.
+
+\section{Summary of Findings}
+\label{sec:findings}
+
+The thesis set out to evaluate a Bayesian probabilistic approach to CLV prediction in a non-contractual e-commerce setting, organised around three research questions. The calibration--holdout evaluation on the UCI Online Retail II dataset (\num{4{,}522} customers, a \num{40.4}-week holdout horizon) yields the following picture.
+
+\paragraph{RQ1 / H1: Accuracy with calibrated uncertainty.}
+The Bayesian BG/NBD~$+$~Gamma-Gamma model was found to be \fillin{competitive/superior} with the RFM-heuristic and XGBoost baselines on out-of-sample accuracy (Table~\ref{tab:metrics_comparison}), while uniquely providing posterior predictive intervals whose empirical coverage was \fillin{well/poorly} calibrated (Table~\ref{tab:coverage}). The central argument of the thesis, that the value of the Bayesian approach lies not only in point accuracy but in the trustworthy quantification of uncertainty, is therefore \fillin{borne out / qualified} by the evidence.
+
+\paragraph{RQ2 / H2: Hierarchical partial pooling.}
+Partial pooling across country segments \fillin{reduced / did not reduce} prediction error for the data-sparse markets (Germany, France) relative to the pooled model (Table~\ref{tab:country_mae}), consistent with the borrowing-of-strength mechanism. The effect was, as theory predicts, concentrated in the small segments and negligible for the data-rich UK.
+
+\paragraph{RQ3 / H3: Decision-theoretic targeting.}
+Targeting by the posterior probability $P(\text{CLV} > c)$ \fillin{outperformed / did not outperform} point-estimate targeting in cumulative realised value (Table~\ref{tab:targeting_sim_bg_nbd_bayesian}), and the result was \fillin{robust / sensitive} to the assumed intervention cost. This demonstrates that the full posterior is not merely a statistical nicety but translates into a measurable economic advantage in a concrete decision problem.
+
+\section{Theoretical Contributions}
+\label{sec:contributions}
+
+The thesis makes three connected contributions. First, it provides an end-to-end Bayesian implementation of the BG/NBD~$+$~Gamma-Gamma framework estimated by modern Hamiltonian Monte Carlo, rather than the maximum-likelihood fitting that predominates in practice; this makes the full posterior, and hence calibrated uncertainty, available throughout. Second, it formulates and tests a hierarchical extension with non-centred partial pooling across segments, addressing the standard model's assumption of a single homogeneous population. Third, it operationalises Bayesian decision theory for the targeting problem, moving beyond the common practice of thresholding a point estimate to a risk-aware rule that uses the entire posterior. Each contribution corresponds to a limitation of the prior literature identified in Section~\ref{sec:ch2-summary}: the absence of native uncertainty quantification, the neglect of segment heterogeneity, and the failure to connect distributional predictions to decisions.
+
+\section{Managerial Implications}
+\label{sec:managerial}
+
+For practitioners, the results carry three practical messages. First, where decisions are risk-sensitive (deciding how much to spend retaining a customer whose value is uncertain), a model that reports calibrated intervals is more useful than one that reports only a number, even when their point accuracy is similar. Second, firms operating across heterogeneous markets or channels can stabilise estimates for their smaller segments through partial pooling, without resorting either to a single global model that ignores differences or to noisy per-segment models. Third, the targeting simulation provides a directly actionable recipe: rank customers by the posterior probability that their value exceeds the campaign cost, and tune the probability threshold to the firm's risk appetite. The expected benefit is largest precisely for the ambiguous, high-uncertainty customers near the decision boundary, where point estimates are least reliable.
+
+\section{Limitations}
+\label{sec:limitations}
+
+Several limitations qualify these conclusions. \textbf{Model assumptions.} The BG/NBD model assumes stationary transaction and dropout rates and independence between purchasing and dropout (Section~\ref{sec:bgnbd-assumptions}); real customers may change behaviour over time or in response to marketing. \textbf{Gamma-Gamma independence.} The exploratory analysis found a weak but non-zero positive association between frequency and monetary value (Pearson $r = 0.13$, Spearman $\rho = 0.21$; Section~\ref{sec:eda}), a mild violation of the independence assumption underlying the multiplicative CLV decomposition, which may introduce a small bias into the monetary component. \textbf{Single dataset.} The empirical evidence derives from one retailer's data; generalisation to other categories, price points, and purchase cadences remains to be established. \textbf{Segment granularity.} Country was used as the only segmentation variable, and the small non-UK segments, though ideal for testing partial pooling, contain few customers, so per-segment estimates remain uncertain. \textbf{Horizon and covariates.} A single calibration/holdout split and horizon were used, and the models omit customer-level covariates (acquisition channel, demographics, marketing exposure) that could sharpen predictions.
+
+\section{Future Work}
+\label{sec:future}
+
+These limitations suggest a clear research agenda. Relaxing stationarity through time-varying or seasonal extensions would better capture lifecycle and calendar effects. Incorporating covariates, via a regression layer on the BG/NBD and Gamma-Gamma parameters, would let the model exploit the rich behavioural data available in e-commerce while retaining its generative, uncertainty-aware structure. Replacing the assumed independence of frequency and value with a jointly specified model would address the mild violation observed here. Methodologically, formal Bayesian model comparison (WAIC, LOO-CV; Section~\ref{sec:bayes-fundamentals}) across the pooled, hierarchical, and covariate-augmented specifications would put model selection on a principled footing. Finally, validating the decision-theoretic targeting rule in a live A/B test, rather than a holdout simulation, would close the loop between posterior inference and realised business value.
+
+\section{Concluding Remarks}
+\label{sec:concluding}
+
+Customer lifetime value in non-contractual settings is fundamentally a problem of reasoning about an unobservable state under uncertainty. This thesis has argued, and set out to demonstrate empirically, that a Bayesian treatment of generative customer-base models is well matched to that problem: it delivers competitive predictions, calibrated uncertainty, principled pooling across heterogeneous segments, and decisions that account for what the firm does not know. The broader lesson is that, for value-based marketing decisions, how confident a model is can matter as much as what it predicts, and a framework that quantifies both is the more dependable foundation for action.

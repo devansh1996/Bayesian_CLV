@@ -1,0 +1,114 @@
+% ============================================================
+% CHAPTER 5 — RESULTS
+% ============================================================
+\chapter{Results}
+\label{ch:results}
+
+This chapter reports the empirical results of the calibration--holdout evaluation and tests the three hypotheses of Section~\ref{sec:hypotheses}. Section~\ref{sec:results-diagnostics} establishes that the MCMC inference is trustworthy; Sections~\ref{sec:results-h1}--\ref{sec:results-h3} address H1, H2, and H3 in turn; and Section~\ref{sec:results-summary} collates the verdicts.
+
+\paragraph{Note on reproduction.}
+The tables and figures in this chapter are produced by \texttt{src/run\_all\_models.py} and written to \texttt{outputs/results/} and \texttt{outputs/figures/}. Where a generated artefact is present it is included automatically; placeholders mark quantities to be populated from the completed run, and numeric values flagged in the prose (for example, \fillin{value}) are read directly from the corresponding result table.
+
+\section{MCMC Convergence and Diagnostics}
+\label{sec:results-diagnostics}
+
+Before interpreting any posterior, the quality of the sampling is verified using the diagnostics of Section~\ref{sec:mcmc}. Figure~\ref{fig:rhat} shows the split-$\widehat{R}$ values for the pooled BG/NBD, hierarchical BG/NBD, and Gamma-Gamma models. Convergence is indicated when all parameters satisfy $\widehat{R} < 1.01$; the effective sample sizes and the number of divergent transitions for each model are summarised below. The trace and pair plots (Figures~\ref{fig:trace} and~\ref{fig:pairs}) provide a visual check on mixing and posterior correlation structure.
+
+\condfig{../outputs/figures/rhat_bgnbd_standard.png}{0.7\linewidth}{Split-$\widehat{R}$ convergence diagnostics for the pooled BG/NBD model. The dashed line marks the $1.01$ threshold.}{fig:rhat}
+
+\condfig{../outputs/figures/trace_bgnbd_standard.png}{0.85\linewidth}{Posterior trace plots for the pooled BG/NBD population parameters $(r, \alpha, a, b)$. Well-mixed, stationary chains indicate reliable sampling.}{fig:trace}
+
+\condfig{../outputs/figures/pairs_bgnbd.png}{0.75\linewidth}{Pairwise posterior marginals for the BG/NBD parameters, with divergences highlighted. Strong correlations would motivate reparameterisation.}{fig:pairs}
+
+For the hierarchical model, the non-centred parameterisation (Section~\ref{sec:noncentered}) was adopted to control the funnel geometry that the centred form induces; Figure~\ref{fig:rhat-hier} confirms whether this resolved the sampling pathologies. Overall, the diagnostics indicate that the reported posteriors are \fillin{converged / require attention} and provide a sound basis for the inferences that follow.
+
+\condfig{../outputs/figures/rhat_bgnbd_hierarchical.png}{0.7\linewidth}{Split-$\widehat{R}$ for the hierarchical BG/NBD model under the non-centred parameterisation.}{fig:rhat-hier}
+
+\section{H1: Predictive Accuracy and Calibrated Uncertainty}
+\label{sec:results-h1}
+
+\subsection{Point and Ranking Accuracy}
+\label{sec:results-accuracy}
+
+Table~\ref{tab:metrics_comparison} reports the headline comparison across all models for both holdout transaction prediction and CLV, covering error (MAE, RMSE, MAPE), ranking (Spearman, Gini), and top-$k$ relevance (NDCG). H1 predicts that the Bayesian BG/NBD~$+$~Gamma-Gamma model is competitive with or superior to the RFM-heuristic and XGBoost baselines. The results show that the Bayesian model attains a transaction MAE of \fillin{value} against \fillin{value} for XGBoost and \fillin{value} for the RFM heuristic, and a CLV Gini of \fillin{value}; the ranking metrics in particular indicate \fillin{summary of finding}.
+
+\resulttable{metrics_comparison}{Model comparison across transaction and CLV prediction metrics.}{tab:metrics_comparison}
+
+The decile calibration plot (Figure~\ref{fig:calibration}) shows predicted versus actual transactions for each model. Points close to the diagonal indicate good calibration of the point predictions; systematic departure in the top deciles would signal over- or under-prediction for the most active customers.
+
+\condfig{../outputs/figures/calibration_comparison.png}{0.95\linewidth}{Decile calibration: mean predicted versus mean actual holdout transactions for each model. The diagonal denotes perfect calibration.}{fig:calibration}
+
+\subsection{Uncertainty Calibration}
+\label{sec:results-uncertainty}
+
+The distinctive claim of H1 is that the Bayesian model adds \emph{calibrated uncertainty} that point-prediction baselines cannot provide. Table~\ref{tab:coverage} reports the empirical coverage of posterior predictive credible intervals, the mean interval width, and the CRPS. Coverage close to the nominal level (e.g.\ empirical coverage near $90\%$ for the $90\%$ interval) indicates well-calibrated uncertainty; the observed coverage is \fillin{value}, which is \fillin{interpretation}. The posterior predictive distributions for a sample of customers (Figure~\ref{fig:postpred}) illustrate how the model expresses heterogeneous uncertainty across the customer base.
+
+\resulttable{credible_interval_coverage}{Posterior predictive credible-interval coverage and CRPS.}{tab:coverage}
+
+\condfig{../outputs/figures/posterior_predictive_bgnbd.png}{0.95\linewidth}{Posterior predictive distributions of holdout transactions for a sample of customers (violins), with realised values overlaid. The spread of each violin is the model's per-customer uncertainty.}{fig:postpred}
+
+\subsection{Activity Prediction}
+\label{sec:results-palive}
+
+The $P(\text{alive})$ estimates are evaluated as a classifier of holdout activity (Table~\ref{tab:p_alive}). The BG/NBD model achieves an AUC of \fillin{value} and a Brier score of \fillin{value}, indicating \fillin{interpretation} discrimination of customers who remain active. Figure~\ref{fig:palive} shows that $P(\text{alive})$ increases with calibration frequency, as theory predicts.
+
+\resulttable{p_alive_evaluation}{$P(\text{alive})$ evaluation: binary activity-prediction metrics.}{tab:p_alive}
+
+\condfig{../outputs/figures/p_alive_bgnbd_standard.png}{0.95\linewidth}{Distribution of $P(\text{alive})$ overall and by frequency group. Higher-frequency customers concentrate at higher $P(\text{alive})$.}{fig:palive}
+
+\paragraph{Verdict on H1.}
+Taken together, the accuracy metrics (Table~\ref{tab:metrics_comparison}) and the uncertainty diagnostics (Table~\ref{tab:coverage}) indicate that H1 is \fillin{supported / partially supported / not supported}: the Bayesian model is \fillin{competitive/superior} on accuracy while uniquely providing \fillin{well-calibrated} predictive intervals.
+
+\section{H2: Hierarchical Partial Pooling Across Segments}
+\label{sec:results-h2}
+
+H2 predicts that hierarchical partial pooling reduces prediction error for small country segments relative to the pooled (complete-pooling) model. Table~\ref{tab:country_mae} reports per-country transaction MAE for every model, and Figure~\ref{fig:country-mae} visualises the comparison. The key contrast is the small markets, Germany ($n=74$) and France ($n=54$), where the hierarchical model's MAE is \fillin{value} versus \fillin{value} for the pooled model, a change of \fillin{value}. For the data-rich UK segment, the two are expected to coincide, since pooling has little effect where data are abundant.
+
+\resulttable{country_level_mae}{Per-country transaction-prediction MAE by model (RQ2/H2).}{tab:country_mae}
+
+\condfig{../outputs/figures/country_mae_comparison.png}{0.95\linewidth}{Per-country transaction MAE by model. Differences concentrated in the small segments (Germany, France, Other) test the partial-pooling hypothesis.}{fig:country-mae}
+
+The mechanism behind any improvement is visible in the shrinkage of the segment-level parameters toward the global mean. Figure~\ref{fig:shrinkage-r} shows the per-segment posteriors for the BG/NBD shape parameter $r$: small segments exhibit wider posteriors pulled toward the global estimate, whereas the UK segment is estimated precisely and close to its no-pooling value.
+
+\condfig{../outputs/figures/hierarchical_shrinkage_r.png}{0.7\linewidth}{Per-segment posterior of the BG/NBD parameter $r$ (90\% HDI), with the global mean marked. Small segments are shrunk toward the global estimate.}{fig:shrinkage-r}
+
+\paragraph{Verdict on H2.}
+The per-segment errors indicate that H2 is \fillin{supported / partially supported / not supported}: partial pooling \fillin{does / does not} reduce error for the data-sparse segments, consistent with the borrowing-of-strength mechanism of Section~\ref{sec:hierarchical}.
+
+\section{H3: Decision-Theoretic Targeting}
+\label{sec:results-h3}
+
+H3 predicts that targeting customers by the posterior probability $P(\text{CLV} > c)$ yields higher cumulative realised value than targeting by point-estimate CLV. Table~\ref{tab:targeting_sim_bg_nbd_bayesian} reports the targeting simulation for the Bayesian model: cumulative net value under the point-estimate rule, the posterior-probability rule, and the oracle, across targeting depths and the swept intervention cost. Figure~\ref{fig:targeting-sim} visualises the strategy curves and the incremental advantage of the posterior rule.
+
+\resulttable{targeting_simulation_bg_nbd_bayesian}{Decision-theoretic targeting (BG/NBD): posterior-probability versus point-estimate versus oracle net value, swept over intervention cost.}{tab:targeting_sim_bg_nbd_bayesian}
+
+\condfig{../outputs/figures/targeting_simulation_bg_nbd_bayesian.png}{0.95\linewidth}{Decision-theoretic targeting for the Bayesian model at the headline cost of \pounds 20. Left: cumulative net value by strategy and depth. Right: the net-value advantage of the posterior rule over the point estimate.}{fig:targeting-sim}
+
+At the headline intervention cost of \pounds 20, the posterior-probability rule captures \fillin{value} in cumulative net value at a targeting depth of $20\%$, compared with \fillin{value} for the point-estimate rule, an improvement of \fillin{value}. The advantage is \fillin{consistent / inconsistent} across the swept cost grid (\pounds 5, \pounds 20, \pounds 50), indicating that the conclusion is \fillin{robust / sensitive} to the cost assumption. For completeness, Figure~\ref{fig:lift} reports the conventional targeting-lift curves, which measure revenue captured as a function of targeting depth.
+
+\condfig{../outputs/figures/targeting_lift_curves.png}{0.95\linewidth}{Cumulative-gain and lift curves for all models. Steeper early rise indicates better identification of high-value customers.}{fig:lift}
+
+\paragraph{Verdict on H3.}
+The simulation indicates that H3 is \fillin{supported / partially supported / not supported}: the posterior-probability rule \fillin{does / does not} outperform point-estimate targeting, with the largest gains expected among high-uncertainty customers near the cost threshold (Section~\ref{sec:improvement}).
+
+\section{Summary of Hypothesis Tests}
+\label{sec:results-summary}
+
+Table~\ref{tab:verdicts} collates the verdicts. The detailed interpretation and its implications for theory and practice are discussed in Chapter~\ref{ch:conclusion}.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Summary of hypothesis-test outcomes.}
+  \label{tab:verdicts}
+  \begin{tabularx}{\linewidth}{@{}p{0.8cm} Y l@{}}
+    \toprule
+    \textbf{ID} & \textbf{Hypothesis (abridged)} & \textbf{Verdict} \\
+    \midrule
+    H1 & Bayesian model competitive/superior on accuracy with calibrated uncertainty & \fillin{verdict} \\
+    \addlinespace
+    H2 & Partial pooling reduces error for small country segments & \fillin{verdict} \\
+    \addlinespace
+    H3 & $P(\text{CLV} > c)$ targeting beats point-estimate targeting & \fillin{verdict} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

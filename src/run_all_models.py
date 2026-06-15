@@ -1,0 +1,747 @@
+#!/usr/bin/env python3
+"""
+src/run_all_models.py
+=====================
+Master execution pipeline for the CLV thesis.
+
+Runs in 7 sequential steps:
+    1. Data preparation  (loads or rebuilds processed parquet files)
+    2. Bayesian models   (BG/NBD standard + hierarchical, Gamma-Gamma)
+    3. Bayesian predictions (transactions, P(alive), monetary, CLV posterior)
+    4. Classical baselines  (Naive mean, RFM heuristic, XGBoost two-stage)
+    5. Evaluation        (MAE/RMSE/Gini/NDCG, coverage, CRPS, lift, classification)
+    6. Save results      (CSV + LaTeX tables → outputs/results/)
+    6b. Decision analysis(RQ3 targeting simulation + RQ2 country-level MAE)
+    7. Thesis plots      (PNG figures → outputs/figures/)
+
+Usage
+-----
+    # Full run (fits new MCMC traces, ~30–60 min depending on hardware)
+    python src/run_all_models.py
+
+    # Load previously saved traces, skip MCMC
+    python src/run_all_models.py --skip-sampling
+
+    # Force re-run data pipeline even if processed files exist
+    python src/run_all_models.py --force-data
+
+    # Use fewer posterior samples for prediction (faster, less accurate)
+    python src/run_all_models.py --n-samples 500
+
+Output directories
+------------------
+    outputs/traces/   — ArviZ InferenceData .nc files (MCMC traces)
+    outputs/results/  — .csv and .tex result tables
+    outputs/figures/  — .png thesis-quality plots
+"""
+
+import sys
+import os
+import argparse
+import warnings
+
+# Allow running as `python src/run_all_models.py` from repo root
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import numpy as np
+import pandas as pd
+from pathlib import Path
+from typing import Optional
+
+import matplotlib
+matplotlib.use("Agg")   # headless — no display required
+import matplotlib.pyplot as plt
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="pymc")
+
+# ── Project modules ───────────────────────────────────────────────────────────
+from src.data import run_pipeline, load_processed, CAL_END
+from src.models import (
+    build_bgnbd,
+    build_hierarchical_bgnbd,
+    build_gamma_gamma,
+    fit_model,
+    load_trace,
+    predict_conditional_transactions,
+    predict_monetary_value,
+    predict_p_alive,
+    compute_clv_posterior,
+    summarise_trace,
+)
+from src.baselines import fit_all_baselines
+from src.evaluation import (
+    evaluate_model,
+    compare_all_models,
+    lift_comparison_table,
+    targeting_simulation,
+    targeting_simulation_sweep,
+    country_level_metrics,
+)
+import src.plots as P
+
+# ── Output directories ────────────────────────────────────────────────────────
+RESULTS_DIR = Path("outputs/results")
+FIGURES_DIR = Path("outputs/figures")
+TRACES_DIR  = Path("outputs/traces")
+
+for _d in [RESULTS_DIR, FIGURES_DIR, TRACES_DIR]:
+    _d.mkdir(parents=True, exist_ok=True)
+
+# ── MCMC sampling config ──────────────────────────────────────────────────────
+SAMPLING_CONFIG = dict(
+    draws         = 2000,
+    tune          = 2000,
+    chains        = 4,
+    target_accept = 0.9,
+    random_seed   = 42,
+)
+
+# ── Targeting depths for lift evaluation ─────────────────────────────────────
+TOP_K_FRACS = [0.05, 0.10, 0.20, 0.30, 0.50]
+
+# ── Decision-theoretic targeting (RQ3 / H3) ──────────────────────────────────
+# Per-customer intervention cost (e.g. a discount voucher / outreach cost), in £.
+# A grid is swept for sensitivity; PRIMARY_COST drives the headline figure.
+TARGETING_DEPTHS = [0.05, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50]
+COST_GRID        = [5.0, 20.0, 50.0]
+PRIMARY_COST     = 20.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _section(title: str) -> None:
+    print("\n" + "=" * 65)
+    print(f"  {title}")
+    print("=" * 65)
+
+
+def _save_results(df: pd.DataFrame, stem: str, caption: str = "", label: str = "") -> None:
+    """Save DataFrame as both CSV and a booktabs LaTeX table."""
+    csv_path = RESULTS_DIR / f"{stem}.csv"
+    tex_path = RESULTS_DIR / f"{stem}.tex"
+
+    df.to_csv(csv_path)
+
+    try:
+        latex = df.to_latex(
+            float_format    = "%.4f",
+            column_format   = "l" + "r" * len(df.columns),
+            caption         = caption,
+            label           = label,
+            position        = "htbp",
+            escape          = True,
+        )
+        # Prepend booktabs requirement comment
+        latex = "% Requires \\usepackage{booktabs}\n" + latex
+        tex_path.write_text(latex, encoding="utf-8")
+    except Exception as e:
+        print(f"  LaTeX export warning ({stem}): {e}")
+
+    print(f"  Saved: {csv_path.name}  /  {tex_path.name}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 1 — DATA
+# ─────────────────────────────────────────────────────────────────────────────
+
+def step_data(force_rerun: bool = False):
+    _section("STEP 1: DATA PIPELINE")
+
+    processed_ready = all(
+        Path(f"data/processed/{f}").exists()
+        for f in ["customers.parquet", "holdout_truth.parquet",
+                  "cal_transactions.parquet", "holdout_transactions.parquet"]
+    )
+
+    if processed_ready and not force_rerun:
+        print("Processed files found — loading from cache.")
+        cal, holdout, customers, truth = load_processed()
+    else:
+        print("Running full data pipeline...")
+        _, cal, holdout, customers, truth = run_pipeline()
+
+    # Holdout window in weeks (BG/NBD prediction horizon)
+    t_future = (
+        holdout["InvoiceDate"].max() - pd.Timestamp(CAL_END)
+    ).days / 7.0
+    print(f"\nHoldout window: {t_future:.1f} weeks  ({len(customers):,} customers)")
+
+    return cal, holdout, customers, truth, t_future
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 2 — FIT BAYESIAN MODELS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def step_bayesian(customers: pd.DataFrame, skip_sampling: bool = False) -> dict:
+    _section("STEP 2: BAYESIAN MODELS (MCMC)")
+
+    traces = {}
+
+    # 2a. Standard BG/NBD ─────────────────────────────────────────────────────
+    print("\n── 2a. Standard BG/NBD ──────────────────────────────────────")
+    trace_path = TRACES_DIR / "bgnbd_standard.nc"
+    if skip_sampling and trace_path.exists():
+        print("  Loading saved trace...")
+        traces["bgnbd"] = load_trace("bgnbd_standard")
+    else:
+        model = build_bgnbd(customers)
+        traces["bgnbd"] = fit_model(model, save_name="bgnbd_standard", **SAMPLING_CONFIG)
+
+    # 2b. Hierarchical BG/NBD ─────────────────────────────────────────────────
+    print("\n── 2b. Hierarchical BG/NBD (per country segment) ────────────")
+    trace_path = TRACES_DIR / "bgnbd_hierarchical.nc"
+    if skip_sampling and trace_path.exists():
+        print("  Loading saved trace...")
+        traces["bgnbd_hier"] = load_trace("bgnbd_hierarchical")
+    else:
+        model_hier = build_hierarchical_bgnbd(customers)
+        traces["bgnbd_hier"] = fit_model(
+            model_hier, save_name="bgnbd_hierarchical", **SAMPLING_CONFIG
+        )
+
+    # 2c. Gamma-Gamma (monetary) ──────────────────────────────────────────────
+    print("\n── 2c. Gamma-Gamma (monetary value) ─────────────────────────")
+    trace_path = TRACES_DIR / "gamma_gamma.nc"
+    if skip_sampling and trace_path.exists():
+        print("  Loading saved trace...")
+        traces["gamma_gamma"] = load_trace("gamma_gamma")
+    else:
+        model_gg = build_gamma_gamma(customers)
+        traces["gamma_gamma"] = fit_model(
+            model_gg, save_name="gamma_gamma", **SAMPLING_CONFIG
+        )
+
+    # Save posterior summaries ─────────────────────────────────────────────────
+    print("\n── Posterior summaries ──────────────────────────────────────")
+    for name, trace in traces.items():
+        try:
+            summary = summarise_trace(trace)
+            out = RESULTS_DIR / f"posterior_summary_{name}.csv"
+            summary.to_csv(out)
+            print(f"  {name}: saved to {out.name}")
+        except Exception as e:
+            print(f"  {name}: summary failed — {e}")
+
+    return traces
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3 — BAYESIAN PREDICTIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def step_bayesian_predictions(
+    customers: pd.DataFrame,
+    traces: dict,
+    t_future: float,
+    n_samples: int = 2000,
+) -> dict:
+    _section("STEP 3: BAYESIAN PREDICTIONS")
+
+    predictions = {}
+
+    # Shared: Gamma-Gamma monetary predictions (used by both BG/NBD variants)
+    print("\n── Gamma-Gamma monetary predictions ─────────────────────────")
+    monetary_samples, repeat_mask = predict_monetary_value(
+        traces["gamma_gamma"], customers, n_samples=n_samples
+    )
+    print(f"  Repeat customers: {repeat_mask.sum():,} / {len(customers):,}")
+    print(f"  Mean pred monetary: £{monetary_samples.mean():.2f}")
+
+    # ── Standard BG/NBD ──────────────────────────────────────────────────────
+    print("\n── Standard BG/NBD ──────────────────────────────────────────")
+    tx_bgnbd = predict_conditional_transactions(
+        traces["bgnbd"], customers,
+        t_future=t_future, n_samples=n_samples, hierarchical=False,
+    )
+    p_alive_bgnbd = predict_p_alive(
+        traces["bgnbd"], customers,
+        n_samples=n_samples, hierarchical=False,
+    )
+    clv_bgnbd = compute_clv_posterior(tx_bgnbd, monetary_samples, repeat_mask)
+
+    print(f"  Mean predicted tx:  {tx_bgnbd.mean(axis=0).mean():.3f}")
+    print(f"  Mean P(alive):      {p_alive_bgnbd.mean():.3f}")
+    print(f"  Mean predicted CLV: £{clv_bgnbd.mean(axis=0).mean():.2f}")
+
+    predictions["BG/NBD (Bayesian)"] = {
+        "tx_posterior" : tx_bgnbd,
+        "tx_mean"      : tx_bgnbd.mean(axis=0),
+        "p_alive"      : p_alive_bgnbd,
+        "clv_posterior": clv_bgnbd,
+        "clv_mean"     : clv_bgnbd.mean(axis=0),
+    }
+
+    # ── Hierarchical BG/NBD ──────────────────────────────────────────────────
+    print("\n── Hierarchical BG/NBD ──────────────────────────────────────")
+    tx_hier = predict_conditional_transactions(
+        traces["bgnbd_hier"], customers,
+        t_future=t_future, n_samples=n_samples, hierarchical=True,
+    )
+    p_alive_hier = predict_p_alive(
+        traces["bgnbd_hier"], customers,
+        n_samples=n_samples, hierarchical=True,
+    )
+    clv_hier = compute_clv_posterior(tx_hier, monetary_samples, repeat_mask)
+
+    print(f"  Mean predicted tx:  {tx_hier.mean(axis=0).mean():.3f}")
+    print(f"  Mean P(alive):      {p_alive_hier.mean():.3f}")
+    print(f"  Mean predicted CLV: £{clv_hier.mean(axis=0).mean():.2f}")
+
+    predictions["Hierarchical BG/NBD"] = {
+        "tx_posterior" : tx_hier,
+        "tx_mean"      : tx_hier.mean(axis=0),
+        "p_alive"      : p_alive_hier,
+        "clv_posterior": clv_hier,
+        "clv_mean"     : clv_hier.mean(axis=0),
+    }
+
+    return predictions
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 4 — CLASSICAL BASELINES
+# ─────────────────────────────────────────────────────────────────────────────
+
+def step_baselines(
+    customers: pd.DataFrame,
+    truth: pd.DataFrame,
+    t_future: float,
+    cal: Optional[pd.DataFrame] = None,
+) -> dict:
+    _section("STEP 4: CLASSICAL BASELINES")
+
+    fitted = fit_all_baselines(
+        customers, truth, cal_transactions=cal, include_pareto=False
+    )
+
+    baseline_preds = {}
+    for name, model in fitted.items():
+        tx  = np.maximum(model.predict(customers, t_future=t_future), 0.0)
+        clv = np.maximum(model.predict_clv(customers, t_future=t_future), 0.0)
+        baseline_preds[name] = {
+            "tx_mean"      : tx,
+            "clv_mean"     : clv,
+            "tx_posterior" : None,   # no posterior for classical models
+            "p_alive"      : None,
+            "clv_posterior": None,
+        }
+        print(f"\n  {name}:  mean tx = {tx.mean():.3f}   mean CLV = £{clv.mean():.2f}")
+
+    return baseline_preds
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 5 — EVALUATE ALL MODELS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def step_evaluate(
+    truth: pd.DataFrame,
+    bayesian_preds: dict,
+    baseline_preds: dict,
+) -> list:
+    _section("STEP 5: EVALUATION")
+
+    y_true_tx     = truth["holdout_transactions"].values.astype(float)
+    y_true_spend  = truth["holdout_spend"].values.astype(float)
+    y_true_active = truth["is_active"].values.astype(int)
+
+    all_preds = {**bayesian_preds, **baseline_preds}
+    eval_results = []
+
+    for name, preds in all_preds.items():
+        print(f"\n  Evaluating: {name}")
+        res = evaluate_model(
+            model_name        = name,
+            y_true_tx         = y_true_tx,
+            y_pred_tx         = preds["tx_mean"],
+            y_true_spend      = y_true_spend,
+            y_pred_spend      = preds["clv_mean"],
+            y_true_active     = y_true_active if preds["p_alive"] is not None else None,
+            y_score_alive     = preds["p_alive"],
+            posterior_samples = preds["tx_posterior"],
+            top_k_fracs       = TOP_K_FRACS,
+        )
+        eval_results.append(res)
+
+        m = res["metrics"]
+        print(f"    TX:  MAE={m['tx_mae']:.4f}  RMSE={m['tx_rmse']:.4f}  "
+              f"Spearman={m['tx_spearman']:.4f}  Gini={m['tx_gini']:.4f}")
+        if "clv_mae" in m:
+            print(f"    CLV: MAE=£{m['clv_mae']:.2f}  "
+                  f"Gini={m['clv_gini']:.4f}  NDCG@100={m.get('ndcg_100', float('nan')):.4f}")
+        if "post_coverage_90pct" in m:
+            print(f"    Bayes: coverage(90%)={m['post_coverage_90pct']:.3f}  "
+                  f"CRPS={m['post_crps']:.4f}")
+        if res.get("classification"):
+            c = res["classification"]
+            print(f"    P(alive): AUC={c['auc_roc']:.4f}  Brier={c['auc_pr']:.4f}")
+
+    return eval_results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6 — SAVE RESULTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def step_save_results(eval_results: list) -> pd.DataFrame:
+    _section("STEP 6: SAVING RESULTS TABLES")
+
+    # ── Main metrics comparison ───────────────────────────────────────────────
+    comparison = compare_all_models(
+        eval_results,
+        metrics=[
+            "tx_mae", "tx_rmse", "tx_mape", "tx_spearman", "tx_gini",
+            "clv_mae", "clv_rmse", "clv_gini", "ndcg_100", "ndcg_500",
+        ],
+    )
+    _save_results(
+        comparison,
+        "metrics_comparison",
+        caption="Model comparison across transaction and CLV prediction metrics.",
+        label="tab:metrics_comparison",
+    )
+    print("\nMetrics comparison table:")
+    print(comparison.to_string())
+
+    # ── Calibration tables (one per model) ────────────────────────────────────
+    for res in eval_results:
+        if res.get("calibration") is not None:
+            safe = (
+                res["model_name"]
+                .lower()
+                .replace("/", "_")
+                .replace(" ", "_")
+                .replace("(", "")
+                .replace(")", "")
+            )
+            res["calibration"].to_csv(RESULTS_DIR / f"calibration_{safe}.csv", index=False)
+    print(f"  Calibration tables saved.")
+
+    # ── Targeting lift comparison ─────────────────────────────────────────────
+    lift_combined = lift_comparison_table(eval_results)
+    if not lift_combined.empty:
+        _save_results(
+            lift_combined.set_index("top_k_pct"),
+            "targeting_lift",
+            caption="Targeting lift at various customer targeting depths.",
+            label="tab:targeting_lift",
+        )
+
+    # ── Bayesian-specific: credible interval coverage + CRPS ─────────────────
+    coverage_rows = []
+    for res in eval_results:
+        m = res["metrics"]
+        key = "post_coverage_90pct"
+        if key in m:
+            coverage_rows.append({
+                "model"                : res["model_name"],
+                "coverage_90pct"       : m[key],
+                "mean_interval_width"  : m.get("post_mean_interval_width", float("nan")),
+                "crps"                 : m.get("post_crps", float("nan")),
+            })
+    if coverage_rows:
+        cov_df = pd.DataFrame(coverage_rows).set_index("model")
+        _save_results(
+            cov_df,
+            "credible_interval_coverage",
+            caption="Posterior predictive credible interval coverage and CRPS.",
+            label="tab:coverage",
+        )
+
+    # ── P(alive) classification metrics ──────────────────────────────────────
+    palive_rows = []
+    for res in eval_results:
+        if res.get("classification"):
+            palive_rows.append({"model": res["model_name"], **res["classification"]})
+    if palive_rows:
+        palive_df = pd.DataFrame(palive_rows).set_index("model")
+        _save_results(
+            palive_df,
+            "p_alive_evaluation",
+            caption="P(alive) evaluation: binary activity prediction metrics.",
+            label="tab:p_alive",
+        )
+
+    print(f"\nAll results written to {RESULTS_DIR}/")
+    return comparison
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6b — DECISION-THEORETIC & COUNTRY-LEVEL ANALYSIS  (RQ2 / RQ3)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def step_decision_analysis(
+    customers: pd.DataFrame,
+    truth: pd.DataFrame,
+    bayesian_preds: dict,
+    baseline_preds: dict,
+) -> tuple:
+    """
+    RQ3/H3 — decision-theoretic targeting: for each Bayesian model, compare
+    posterior-probability vs point-estimate vs oracle targeting across a grid
+    of intervention costs (uses the CLV posterior).
+
+    RQ2/H2 — country-level transaction MAE for every model, to test whether the
+    hierarchical model's partial pooling helps within country segments.
+
+    Returns (targeting_sims, country_metrics) for downstream plotting.
+    """
+    _section("STEP 6b: DECISION-THEORETIC & COUNTRY-LEVEL ANALYSIS")
+
+    y_true_spend = truth["holdout_spend"].values.astype(float)
+    y_true_tx    = truth["holdout_transactions"].values.astype(float)
+    countries    = customers["country_segment"].values
+
+    # ── RQ3: targeting simulation (Bayesian models only — need a posterior) ───
+    targeting_sims = {}
+    for name, preds in bayesian_preds.items():
+        if preds.get("clv_posterior") is None:
+            continue
+        print(f"\n── Targeting simulation: {name} ──")
+        sweep = targeting_simulation_sweep(
+            preds["clv_posterior"], y_true_spend,
+            cost_grid=COST_GRID, targeting_depths=TARGETING_DEPTHS,
+        )
+        targeting_sims[name] = sweep
+
+        safe = name.lower().replace("/", "_").replace(" ", "_").replace("(", "").replace(")", "")
+        _save_results(
+            sweep.set_index(["cost_per_customer", "targeting_depth"]),
+            f"targeting_simulation_{safe}",
+            caption=f"Decision-theoretic targeting ({name}): posterior-probability vs "
+                    f"point-estimate vs oracle net value, swept over intervention cost.",
+            label=f"tab:targeting_sim_{safe}",
+        )
+        primary = sweep[sweep["cost_per_customer"] == PRIMARY_COST]
+        if not primary.empty:
+            print(primary.to_string(index=False))
+
+    # ── RQ2: per-country transaction MAE for all models ───────────────────────
+    print("\n── Country-level transaction MAE ──")
+    all_preds = {**bayesian_preds, **baseline_preds}
+    tx_predictions = {name: preds["tx_mean"] for name, preds in all_preds.items()}
+    country_metrics = country_level_metrics(
+        actual=y_true_tx, predictions=tx_predictions, countries=countries,
+    )
+    _save_results(
+        country_metrics.set_index("country"),
+        "country_level_mae",
+        caption="Per-country transaction-prediction MAE by model (RQ2/H2).",
+        label="tab:country_mae",
+    )
+    print(country_metrics.to_string(index=False))
+
+    return targeting_sims, country_metrics
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 7 — THESIS PLOTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def step_plots(
+    customers: pd.DataFrame,
+    truth: pd.DataFrame,
+    traces: dict,
+    bayesian_preds: dict,
+    eval_results: list,
+    targeting_sims: Optional[dict] = None,
+    country_metrics: Optional[pd.DataFrame] = None,
+) -> None:
+    _section("STEP 7: GENERATING THESIS PLOTS")
+
+    y_true_tx    = truth["holdout_transactions"].values.astype(float)
+    y_true_spend = truth["holdout_spend"].values.astype(float)
+
+    def _save(fig, name):
+        P.save_figure(fig, name)
+        plt.close(fig)
+
+    def _try(fn, name, *args, **kwargs):
+        try:
+            fig = fn(*args, **kwargs)
+            _save(fig, name)
+        except Exception as e:
+            print(f"  Warning [{name}]: {e}")
+
+    # ── EDA ───────────────────────────────────────────────────────────────────
+    _try(P.plot_rfm_distributions,  "rfm_distributions",  customers)
+    _try(P.plot_monetary_distribution, "monetary_distribution", customers)
+    _try(P.plot_recency_vs_T,        "recency_vs_T",       customers)
+
+    # ── MCMC diagnostics ─────────────────────────────────────────────────────
+    _try(P.plot_trace,  "trace_bgnbd_standard",
+         traces["bgnbd"], ["r", "alpha", "a", "b"], "BG/NBD Standard")
+
+    _try(P.plot_rhat_summary, "rhat_bgnbd_standard",
+         traces["bgnbd"], "BG/NBD (Standard)")
+    _try(P.plot_rhat_summary, "rhat_bgnbd_hierarchical",
+         traces["bgnbd_hier"], "BG/NBD (Hierarchical)")
+    _try(P.plot_rhat_summary, "rhat_gamma_gamma",
+         traces["gamma_gamma"], "Gamma-Gamma")
+
+    _try(P.plot_posterior_pairs, "pairs_bgnbd",
+         traces["bgnbd"], ["r", "alpha", "a", "b"], "BG/NBD")
+
+    # ── Calibration (all models, side by side) ────────────────────────────────
+    cal_dict = {
+        res["model_name"]: res["calibration"]
+        for res in eval_results
+        if res.get("calibration") is not None
+    }
+    _try(P.plot_calibration_comparison, "calibration_comparison", cal_dict)
+
+    # Individual calibration panels
+    for res in eval_results:
+        if res.get("calibration") is not None:
+            safe = (
+                res["model_name"]
+                .lower()
+                .replace("/", "_").replace(" ", "_")
+                .replace("(", "").replace(")", "")
+            )
+            _try(P.plot_calibration, f"calibration_{safe}",
+                 res["calibration"], res["model_name"])
+
+    # ── Lift / targeting ──────────────────────────────────────────────────────
+    lift_dict = {
+        res["model_name"]: res["lift"]
+        for res in eval_results
+        if res.get("lift") is not None
+    }
+    _try(P.plot_lift_curves, "targeting_lift_curves", lift_dict)
+
+    # ── CLV distribution & uncertainty ───────────────────────────────────────
+    bgnbd_clv = bayesian_preds["BG/NBD (Bayesian)"]["clv_posterior"]
+    _try(P.plot_clv_distribution, "clv_distribution_bgnbd", bgnbd_clv)
+    _try(P.plot_clv_uncertainty,  "clv_uncertainty_bgnbd",  bgnbd_clv, customers)
+
+    hier_clv = bayesian_preds["Hierarchical BG/NBD"]["clv_posterior"]
+    _try(P.plot_clv_distribution, "clv_distribution_hierarchical", hier_clv)
+
+    # ── P(alive) ─────────────────────────────────────────────────────────────
+    _try(P.plot_p_alive_distribution, "p_alive_bgnbd_standard",
+         bayesian_preds["BG/NBD (Bayesian)"]["p_alive"], customers, "BG/NBD Standard")
+    _try(P.plot_p_alive_distribution, "p_alive_bgnbd_hierarchical",
+         bayesian_preds["Hierarchical BG/NBD"]["p_alive"], customers, "Hierarchical BG/NBD")
+
+    # ── Posterior predictive ──────────────────────────────────────────────────
+    _try(P.plot_posterior_predictive, "posterior_predictive_bgnbd",
+         y_true_tx, bayesian_preds["BG/NBD (Bayesian)"]["tx_posterior"])
+
+    # ── Hierarchical shrinkage (forest plots) ─────────────────────────────────
+    seg_names = list(customers["country_segment"].unique())
+    for param in ["r", "alpha", "a", "b"]:
+        _try(P.plot_hierarchical_segments,
+             f"hierarchical_shrinkage_{param}",
+             traces["bgnbd_hier"], seg_names, param)
+
+    # ── Decision-theoretic targeting (RQ3 / H3) ───────────────────────────────
+    if targeting_sims:
+        for name, sweep in targeting_sims.items():
+            safe = (
+                name.lower().replace("/", "_").replace(" ", "_")
+                .replace("(", "").replace(")", "")
+            )
+            primary = sweep[sweep["cost_per_customer"] == PRIMARY_COST]
+            if not primary.empty:
+                _try(P.plot_targeting_simulation,
+                     f"targeting_simulation_{safe}",
+                     primary.reset_index(drop=True), name)
+
+    # ── Country-level error (RQ2 / H2) ────────────────────────────────────────
+    if country_metrics is not None and not country_metrics.empty:
+        _try(P.plot_country_mae_comparison, "country_mae_comparison",
+             country_metrics)
+
+    print(f"\nAll figures saved to {FIGURES_DIR}/")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="CLV thesis model pipeline",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--skip-sampling", action="store_true",
+        help="Load previously saved MCMC traces instead of re-running NUTS",
+    )
+    parser.add_argument(
+        "--force-data", action="store_true",
+        help="Re-run data pipeline even when processed parquet files exist",
+    )
+    parser.add_argument(
+        "--n-samples", type=int, default=2000,
+        help="Number of posterior draws used for predictions (per model)",
+    )
+    args = parser.parse_args()
+
+    print("\n" + "=" * 65)
+    print("  CLV THESIS — FULL MODEL PIPELINE")
+    print("=" * 65)
+    print(f"  skip_sampling : {args.skip_sampling}")
+    print(f"  force_data    : {args.force_data}")
+    print(f"  n_samples     : {args.n_samples}")
+
+    # Step 1 — data
+    cal, holdout, customers, truth, t_future = step_data(
+        force_rerun=args.force_data
+    )
+
+    # Step 2 — Bayesian models (MCMC)
+    traces = step_bayesian(customers, skip_sampling=args.skip_sampling)
+
+    # Step 3 — Bayesian predictions
+    bayesian_preds = step_bayesian_predictions(
+        customers, traces, t_future, n_samples=args.n_samples
+    )
+
+    # Step 4 — Classical baselines
+    baseline_preds = step_baselines(customers, truth, t_future, cal=cal)
+
+    # Step 5 — Evaluate all models
+    eval_results = step_evaluate(truth, bayesian_preds, baseline_preds)
+
+    # Step 6 — Save results tables
+    comparison = step_save_results(eval_results)
+
+    # Step 6b — Decision-theoretic (RQ3) + country-level (RQ2) analysis
+    targeting_sims, country_metrics = step_decision_analysis(
+        customers, truth, bayesian_preds, baseline_preds
+    )
+
+    # Step 7 — Thesis plots
+    step_plots(
+        customers, truth, traces, bayesian_preds, eval_results,
+        targeting_sims=targeting_sims, country_metrics=country_metrics,
+    )
+
+    print("\n" + "=" * 65)
+    print("  PIPELINE COMPLETE")
+    print(f"  Results  → {RESULTS_DIR}/")
+    print(f"  Figures  → {FIGURES_DIR}/")
+    print(f"  Traces   → {TRACES_DIR}/")
+    print("=" * 65 + "\n")
+
+    return {
+        "customers"    : customers,
+        "truth"        : truth,
+        "traces"       : traces,
+        "bayesian_preds": bayesian_preds,
+        "baseline_preds": baseline_preds,
+        "eval_results" : eval_results,
+        "comparison"   : comparison,
+        "targeting_sims": targeting_sims,
+        "country_metrics": country_metrics,
+    }
+
+
+if __name__ == "__main__":
+    main()

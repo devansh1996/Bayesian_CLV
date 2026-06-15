@@ -1,0 +1,39 @@
+% Hierarchical partial-pooling structure
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[x=1cm, y=1cm, every node/.style={font=\small}]
+    % global hyperprior
+    \node[hyper, fill=softgray] (global) at (5,3)
+      {\,$\mu,\sigma$ \;\footnotesize(global hyperprior)\,};
+
+    % segment-level parameters
+    \node[latent] (uk) at (1.2,1.2) {UK};
+    \node[latent] (de) at (3.7,1.2) {DE};
+    \node[latent] (fr) at (6.3,1.2) {FR};
+    \node[latent] (ot) at (8.8,1.2) {Other};
+
+    % customers
+    \node[box, minimum width=18mm] (cuk) at (1.2,-0.6) {\footnotesize many\\\footnotesize customers};
+    \node[box, minimum width=16mm] (cde) at (3.7,-0.6) {\footnotesize few};
+    \node[box, minimum width=16mm] (cfr) at (6.3,-0.6) {\footnotesize few};
+    \node[box, minimum width=16mm] (cot) at (8.8,-0.6) {\footnotesize few};
+
+    % edges: global -> segments (partial pooling)
+    \draw[conn] (global) -- (uk);
+    \draw[conn] (global) -- (de);
+    \draw[conn] (global) -- (fr);
+    \draw[conn] (global) -- (ot);
+
+    % edges: segments -> customers
+    \draw[conn] (uk) -- (cuk);
+    \draw[conn] (de) -- (cde);
+    \draw[conn] (fr) -- (cfr);
+    \draw[conn] (ot) -- (cot);
+
+    % shrinkage annotation
+    \node[font=\footnotesize\itshape, accentorange, align=left, anchor=west] at (9.4,2.1)
+      {\,shrinkage\\ \,toward global};
+  \end{tikzpicture}
+  \caption[Hierarchical partial pooling]{Hierarchical (partial-pooling) structure across country segments. Each segment's behavioural parameters are drawn from a shared global hyperprior, so estimates for data-sparse segments (DE, FR, Other) are pulled toward the global mean, borrowing strength from the data-rich UK segment. Complete pooling would collapse the middle layer; no pooling would remove the global hyperprior entirely.}
+  \label{fig:hierarchy}
+\end{figure}

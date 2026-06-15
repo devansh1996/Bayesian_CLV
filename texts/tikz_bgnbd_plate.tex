@@ -1,0 +1,46 @@
+% Graphical (plate) model: BG/NBD + Gamma-Gamma
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[x=14mm, y=14mm]
+    % ── Population-level hyperparameters (rectangles) ────────────
+    \node[hyper] (r)     at (0.0, 0) {$r$};
+    \node[hyper] (alpha) at (1.0, 0) {$\alpha$};
+    \node[hyper] (a)     at (2.3, 0) {$a$};
+    \node[hyper] (b)     at (3.3, 0) {$b$};
+    \node[hyper] (pg)    at (4.9, 0) {$p$};
+    \node[hyper] (q)     at (5.9, 0) {$q$};
+    \node[hyper] (g)     at (6.9, 0) {$\gamma$};
+
+    \node[font=\footnotesize\itshape, anchor=south] at (1.65,0.6) {BG/NBD frequency};
+    \node[font=\footnotesize\itshape, anchor=south] at (2.8,0.6) {};
+    \node[font=\footnotesize\itshape, anchor=south] at (5.9,0.6) {Gamma-Gamma value};
+
+    % ── Latent per-customer parameters (open circles) ───────────
+    \node[latent] (lambda) at (0.5, -1.7) {$\lambda_i$};
+    \node[latent] (pdrop)  at (2.8, -1.7) {$p_i$};
+    \node[latent] (nu)     at (5.9, -1.7) {$\nu_i$};
+
+    % ── Observed data (shaded circles) ──────────────────────────
+    \node[obs] (x)  at (0.3, -3.4) {$x_i$};
+    \node[obs] (tx) at (1.6, -3.4) {$t_{x,i}$};
+    \node[obs] (T)  at (2.9, -3.4) {$T_i$};
+    \node[obs] (z)  at (5.9, -3.4) {$z_i$};
+
+    % ── Edges ───────────────────────────────────────────────────
+    \draw[conn] (r) -- (lambda);      \draw[conn] (alpha) -- (lambda);
+    \draw[conn] (a) -- (pdrop);       \draw[conn] (b) -- (pdrop);
+    \draw[conn] (pg) -- (nu);         \draw[conn] (q) -- (nu);   \draw[conn] (g) -- (nu);
+    \draw[conn] (lambda) -- (x);      \draw[conn] (lambda) -- (tx);
+    \draw[conn] (pdrop) -- (x);       \draw[conn] (pdrop) -- (tx);
+    \draw[conn] (nu) -- (z);
+
+    % ── Plate over customers ────────────────────────────────────
+    \begin{scope}[on background layer]
+      \node[plate, fit=(lambda)(pdrop)(nu)(x)(tx)(T)(z)] (plate) {};
+    \end{scope}
+    \node[anchor=south east, font=\footnotesize, inner sep=3pt]
+      at (plate.south east) {customer $i = 1,\dots,N$};
+  \end{tikzpicture}
+  \caption[Graphical model of the BG/NBD + Gamma-Gamma framework]{Plate representation of the joint BG/NBD~$+$~Gamma-Gamma model. Rounded rectangles are population-level hyperparameters; open circles are latent per-customer parameters (transaction rate $\lambda_i$, dropout probability $p_i$, spend rate $\nu_i$); shaded circles are observed data (repeat purchases $x_i$, recency $t_{x,i}$, observation window $T_i$, average value $z_i$). The plate denotes replication over all $N$ customers.}
+  \label{fig:bgnbd-plate}
+\end{figure}

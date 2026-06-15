@@ -1,0 +1,25 @@
+% Evolution of CLV estimation approaches
+\begin{table}[htbp]
+  \centering
+  \caption{The evolution of CLV estimation, from deterministic heuristics to generative Bayesian models. Only the probabilistic-generative tradition produces calibrated, distributional value estimates from raw transaction data.}
+  \label{tab:evolution}
+  \begin{tabularx}{\linewidth}{@{}l Y c c@{}}
+    \toprule
+    \textbf{Approach} & \textbf{Core idea} & \textbf{Individual-level} & \textbf{Uncertainty} \\
+    \midrule
+    Deterministic formula & Average order value $\times$ frequency $\times$ lifespan, discounted & No & No \\
+    \addlinespace
+    Cohort survival & Track acquired cohorts; extrapolate a survival curve & No & No \\
+    \addlinespace
+    RFM scoring & Rank customers by recency, frequency, monetary quintiles & Partial & No \\
+    \addlinespace
+    Probabilistic (buy-till-you-die) & Generative model of purchasing and latent dropout & Yes & Point (MLE) \\
+    \addlinespace
+    Machine learning & Discriminative regression on engineered features & Yes & Post-hoc \\
+    \addlinespace
+    \textbf{Bayesian generative} & \textbf{Full posterior over BG/NBD + Gamma-Gamma parameters} & \textbf{Yes} & \textbf{Calibrated} \\
+    \bottomrule
+  \end{tabularx}
+  \par\vspace{3pt}
+  {\footnotesize\itshape Note: author's own compilation, synthesising \textcite{blattberg1996}, \textcite{schmittlein1987}, \textcite{fader2005}, \textcite{chamberlain2017}, and related literature.}
+\end{table}

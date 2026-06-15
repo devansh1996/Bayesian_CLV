@@ -1,0 +1,39 @@
+% Buy-till-you-die timeline for a single customer
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[x=1cm, y=1cm]
+    % time axis
+    \draw[-{Latex[length=2.5mm]}, thick] (-0.2,0) -- (11,0) node[right, font=\small] {time};
+
+    % observed purchases (ticks)
+    \foreach \px in {0, 1.7, 2.6, 4.5, 6.4}{
+      \draw[bayesblue, very thick] (\px,-0.18) -- (\px,0.18);
+    }
+    \node[above, font=\footnotesize] at (0,0.2)   {first};
+    \node[above, font=\footnotesize] at (6.4,0.2) {last};
+
+    % observation end
+    \draw[accentorange, very thick, dashed] (10,-0.5) -- (10,1.05);
+    \node[above, font=\scriptsize, accentorange] at (10,1.05) {end of calibration};
+
+    % unobserved-after-last region
+    \draw[gray, dashed] (6.4,0) -- (10,0);
+    \node[font=\scriptsize, align=center, gray] at (8.0,0.45) {alive? / churned?};
+
+    % brace: recency t_x (first -> last)
+    \draw[decorate, decoration={brace, amplitude=5pt, mirror}, bayesblue]
+      (0,-0.65) -- (6.4,-0.65)
+      node[midway, below=6pt, font=\footnotesize, bayesblue] {recency $t_x$};
+
+    % brace: observation period T (first -> end)
+    \draw[decorate, decoration={brace, amplitude=5pt, mirror}, black]
+      (0,-1.45) -- (10,-1.45)
+      node[midway, below=6pt, font=\footnotesize] {observation period $T$};
+
+    % frequency annotation
+    \node[font=\footnotesize, align=center] at (2.3,1.05)
+      {$x = 4$ repeat purchases\\ (5 transactions $-$ 1)};
+  \end{tikzpicture}
+  \caption[Buy-till-you-die timeline]{The buy-till-you-die logic for one customer. Five transactions are observed; the model summarises them as frequency $x$, recency $t_x$, and observation window $T$. After the last purchase the customer's state is latent: the BG/NBD model infers $P(\text{alive})$ from how recently and how often they bought relative to $T$.}
+  \label{fig:btyd-timeline}
+\end{figure}
