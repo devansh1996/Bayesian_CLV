@@ -36,6 +36,7 @@ seaborn>=0.13
 
 # ── Data I/O ──────────────────────────────────────────────────────────────────
 openpyxl>=3.1          # read .xlsx dataset
+pyarrow>=14.0          # parquet engine for data/processed/*.parquet
 netCDF4>=1.6           # save/load MCMC traces (.nc files)
 h5netcdf>=0.14         # fallback NetCDF4 backend
 

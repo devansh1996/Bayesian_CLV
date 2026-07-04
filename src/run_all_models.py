@@ -124,23 +124,127 @@ def _section(title: str) -> None:
     print("=" * 65)
 
 
-def _save_results(df: pd.DataFrame, stem: str, caption: str = "", label: str = "") -> None:
-    """Save DataFrame as both CSV and a booktabs LaTeX table."""
+# ── Thesis table formatting ───────────────────────────────────────────────────
+# Display names for result-table columns/indices. Values may contain LaTeX
+# (rendered with escape=False), so cell values must stay LaTeX-safe — the model
+# and country labels used in this project contain no LaTeX specials.
+_DISPLAY_NAMES = {
+    # identifiers
+    "model": "Model", "country": "Country",
+    "top_k_pct": r"Top-$k$ (\%)", "cost_per_customer": r"Cost (\pounds)",
+    "targeting_depth": "Depth", "n_customers": "$n$", "n_targeted": r"$n$ tgt.",
+    # transaction metrics
+    "tx_mae": "Tx MAE", "tx_rmse": "Tx RMSE", "tx_mape": r"Tx MAPE (\%)",
+    "tx_spearman": "Tx Spearman", "tx_gini": "Tx Gini",
+    # CLV metrics
+    "clv_mae": r"CLV MAE (\pounds)", "clv_rmse": r"CLV RMSE (\pounds)",
+    "clv_gini": "CLV Gini", "ndcg_100": "NDCG@100", "ndcg_500": "NDCG@500",
+    # posterior / coverage
+    "coverage_90pct": r"Coverage (90\%)", "mean_interval_width": "Mean width",
+    "crps": "CRPS",
+    # P(alive) classification
+    "accuracy": "Accuracy", "precision": "Precision", "recall": "Recall",
+    "f1": "F1", "auc_roc": "AUC-ROC", "auc_pr": "AUC-PR", "brier": "Brier",
+    # targeting simulation (all in £)
+    "point_estimate_value": r"Point (\pounds)",
+    "posterior_prob_value": r"Posterior (\pounds)",
+    "oracle_value": r"Oracle (\pounds)", "random_value": r"Random (\pounds)",
+    "improvement": r"Improvement (\pounds)", "improvement_pct": r"Improvement (\%)",
+    "lift": "Lift",
+}
+
+# Columns whose values are monetary (£) — formatted with thousands separators.
+_MONEY_COLS = {
+    "clv_mae", "clv_rmse", "point_estimate_value", "posterior_prob_value",
+    "oracle_value", "random_value", "improvement",
+}
+# Columns that are integer counts.
+_INT_COLS = {"n_customers", "n_targeted"}
+
+
+def _pretty_col(name: str) -> str:
+    """Map an internal column/index name to its thesis display label."""
+    if name in _DISPLAY_NAMES:
+        return _DISPLAY_NAMES[name]
+    if isinstance(name, str) and name.startswith("MAE_"):
+        return f"MAE: {name[4:]}"          # country_level_mae dynamic columns
+    return str(name)
+
+
+def _fmt_cell(col: str, v) -> str:
+    """Format a single cell as a LaTeX-ready string based on its column."""
+    if pd.isna(v):
+        return "--"
+    if not isinstance(v, (int, float, np.integer, np.floating)) or isinstance(v, bool):
+        return str(v)
+    if col in _INT_COLS:
+        return f"{int(round(v)):,}"
+    if col in _MONEY_COLS:
+        return f"{v:,.1f}"
+    if col == "cost_per_customer":
+        return f"{v:,.0f}"
+    if col in {"top_k_pct", "tx_mape", "improvement_pct"}:
+        return f"{v:.1f}"
+    if col == "targeting_depth":
+        return f"{v:.2f}"
+    # default: ratios, scores, MAE/RMSE, coverage, MAE_<model> — 3 decimals
+    return f"{v:.3f}"
+
+
+def _save_results(
+    df: pd.DataFrame, stem: str, caption: str = "", label: str = "",
+    index: bool = True,
+) -> None:
+    """
+    Save a results DataFrame as a raw CSV (for programmatic reference) and a
+    thesis-ready booktabs LaTeX table (pretty headers, per-column formatting).
+
+    The CSV keeps the original column names and full-precision floats so the
+    fill-in of Chapter 5 can read exact values; the .tex is what the thesis
+    \\resulttable macro inputs.
+    """
     csv_path = RESULTS_DIR / f"{stem}.csv"
     tex_path = RESULTS_DIR / f"{stem}.tex"
 
-    df.to_csv(csv_path)
+    df.to_csv(csv_path, index=index)
 
     try:
-        latex = df.to_latex(
-            float_format    = "%.4f",
-            column_format   = "l" + "r" * len(df.columns),
-            caption         = caption,
-            label           = label,
-            position        = "htbp",
-            escape          = True,
+        d = df.copy()
+        # Right-align numeric columns, left-align text columns (from original dtypes).
+        col_align = [
+            "r" if pd.api.types.is_numeric_dtype(df[c]) else "l"
+            for c in d.columns
+        ]
+        # Per-column string formatting.
+        for col in d.columns:
+            d[col] = d[col].map(lambda v, c=col: _fmt_cell(c, v))
+        # Format index level values (numeric levels only), then pretty-rename.
+        if index:
+            if d.index.nlevels > 1:
+                d.index = pd.MultiIndex.from_arrays(
+                    [[_fmt_cell(name, v) for v in d.index.get_level_values(name)]
+                     for name in d.index.names],
+                    names=[_pretty_col(n) for n in d.index.names],
+                )
+            else:
+                name = d.index.name
+                d.index = pd.Index(
+                    [_fmt_cell(name, v) for v in d.index], name=_pretty_col(name)
+                )
+        # Pretty column headers.
+        d = d.rename(columns=_pretty_col)
+
+        n_idx = d.index.nlevels if index else 0
+        column_format = "l" * n_idx + "".join(col_align)
+
+        latex = d.to_latex(
+            index         = index,
+            escape        = False,      # headers carry LaTeX (\pounds, \%, $k$)
+            column_format = column_format,
+            caption       = caption,
+            label         = label,
+            position      = "htbp",
         )
-        # Prepend booktabs requirement comment
         latex = "% Requires \\usepackage{booktabs}\n" + latex
         tex_path.write_text(latex, encoding="utf-8")
     except Exception as e:
@@ -417,6 +521,7 @@ def step_save_results(eval_results: list) -> pd.DataFrame:
         "metrics_comparison",
         caption="Model comparison across transaction and CLV prediction metrics.",
         label="tab:metrics_comparison",
+        index=False,
     )
     print("\nMetrics comparison table:")
     print(comparison.to_string())
