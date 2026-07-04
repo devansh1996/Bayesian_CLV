@@ -39,6 +39,7 @@ References
 import numpy as np
 import pandas as pd
 import pymc as pm
+import pytensor.tensor as pt
 import arviz as az
 from scipy.special import gammaln, betaln
 from pathlib import Path
@@ -110,14 +111,14 @@ def build_bgnbd(
 
         # ln(A_1) — alive term
         ln_A_1 = (
-              pm.math.gammaln(r + x)
-            - pm.math.gammaln(r)
+              pt.gammaln(r + x)
+            - pt.gammaln(r)
             + r     * pm.math.log(alpha)
             - (r + x) * pm.math.log(alpha + T)
-            + pm.math.gammaln(a + b)
-            + pm.math.gammaln(b + x)
-            - pm.math.gammaln(b)
-            - pm.math.gammaln(a + b + x)
+            + pt.gammaln(a + b)
+            + pt.gammaln(b + x)
+            - pt.gammaln(b)
+            - pt.gammaln(a + b + x)
         )
 
         # ln(A_2) — dead term, only defined for customers with x > 0
@@ -126,12 +127,12 @@ def build_bgnbd(
         delta = pm.math.switch(
             pm.math.gt(x, 0),
             (
-                  pm.math.gammaln(r + x)
-                - pm.math.gammaln(r)
+                  pt.gammaln(r + x)
+                - pt.gammaln(r)
                 + r     * pm.math.log(alpha)
                 - (r + x) * pm.math.log(alpha + t_x)
-                + pm.math.gammaln(a + 1 + b + x - 1)
-                - pm.math.gammaln(a + b + x)
+                + pt.gammaln(a + 1 + b + x - 1)
+                - pt.gammaln(a + b + x)
                 + pm.math.log(a)
                 - pm.math.log(b + x - 1)
             ),
@@ -215,10 +216,10 @@ def build_hierarchical_bgnbd(
 
         # ── Segment-level parameters (positive via softplus) ──────────────────
         # softplus(x) = log(1 + exp(x)) ≈ max(0, x) — smooth, always positive
-        r     = pm.Deterministic("r",     pm.math.softplus(mu_r     + sigma_r     * z_r),     dims="segment")
-        alpha = pm.Deterministic("alpha", pm.math.softplus(mu_alpha + sigma_alpha * z_alpha), dims="segment")
-        a     = pm.Deterministic("a",     pm.math.softplus(mu_a     + sigma_a     * z_a),     dims="segment")
-        b     = pm.Deterministic("b",     pm.math.softplus(mu_b     + sigma_b     * z_b),     dims="segment")
+        r     = pm.Deterministic("r",     pt.softplus(mu_r     + sigma_r     * z_r),     dims="segment")
+        alpha = pm.Deterministic("alpha", pt.softplus(mu_alpha + sigma_alpha * z_alpha), dims="segment")
+        a     = pm.Deterministic("a",     pt.softplus(mu_a     + sigma_a     * z_a),     dims="segment")
+        b     = pm.Deterministic("b",     pt.softplus(mu_b     + sigma_b     * z_b),     dims="segment")
 
         # ── Index into per-segment parameters for each customer ───────────────
         # seg_idx maps each customer row to their segment's parameter vector
@@ -229,25 +230,25 @@ def build_hierarchical_bgnbd(
 
         # ── BG/NBD log-likelihood (same formula, now with per-customer params) ─
         ln_A_1 = (
-              pm.math.gammaln(r_i + x)
-            - pm.math.gammaln(r_i)
+              pt.gammaln(r_i + x)
+            - pt.gammaln(r_i)
             + r_i   * pm.math.log(alpha_i)
             - (r_i + x) * pm.math.log(alpha_i + T)
-            + pm.math.gammaln(a_i + b_i)
-            + pm.math.gammaln(b_i + x)
-            - pm.math.gammaln(b_i)
-            - pm.math.gammaln(a_i + b_i + x)
+            + pt.gammaln(a_i + b_i)
+            + pt.gammaln(b_i + x)
+            - pt.gammaln(b_i)
+            - pt.gammaln(a_i + b_i + x)
         )
 
         delta = pm.math.switch(
             pm.math.gt(x, 0),
             (
-                  pm.math.gammaln(r_i + x)
-                - pm.math.gammaln(r_i)
+                  pt.gammaln(r_i + x)
+                - pt.gammaln(r_i)
                 + r_i   * pm.math.log(alpha_i)
                 - (r_i + x) * pm.math.log(alpha_i + t_x)
-                + pm.math.gammaln(a_i + 1 + b_i + x - 1)
-                - pm.math.gammaln(a_i + b_i + x)
+                + pt.gammaln(a_i + 1 + b_i + x - 1)
+                - pt.gammaln(a_i + b_i + x)
                 + pm.math.log(a_i)
                 - pm.math.log(b_i + x - 1)
             ),
@@ -323,9 +324,9 @@ def build_gamma_gamma(
         #         + (p·x)     · log(x)
         #         − (p·x + q) · log(x·m̄ + γ)
         log_lik = (
-              pm.math.gammaln(p_param * x + q)
-            - pm.math.gammaln(p_param * x)
-            - pm.math.gammaln(q)
+              pt.gammaln(p_param * x + q)
+            - pt.gammaln(p_param * x)
+            - pt.gammaln(q)
             + q           * pm.math.log(gamma)
             + (p_param * x - 1) * pm.math.log(m)
             + (p_param * x)     * pm.math.log(x)
@@ -445,10 +446,11 @@ def predict_conditional_transactions(
         seg_idx  = seg_cats.codes
 
         # Flatten posterior chains: (chains, draws, segments) → (total_draws, segments)
-        r_post     = posterior["r"].values.reshape(-1, posterior.dims["segment"])[:n_samples]
-        alpha_post = posterior["alpha"].values.reshape(-1, posterior.dims["segment"])[:n_samples]
-        a_post     = posterior["a"].values.reshape(-1, posterior.dims["segment"])[:n_samples]
-        b_post     = posterior["b"].values.reshape(-1, posterior.dims["segment"])[:n_samples]
+        n_seg      = posterior.sizes["segment"]
+        r_post     = posterior["r"].values.reshape(-1, n_seg)[:n_samples]
+        alpha_post = posterior["alpha"].values.reshape(-1, n_seg)[:n_samples]
+        a_post     = posterior["a"].values.reshape(-1, n_seg)[:n_samples]
+        b_post     = posterior["b"].values.reshape(-1, n_seg)[:n_samples]
 
         for s in range(n_samples):
             r_s     = r_post[s][seg_idx]

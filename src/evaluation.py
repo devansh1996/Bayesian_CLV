@@ -61,28 +61,33 @@ def mape(
 def gini_coefficient(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Normalised Gini coefficient — measures how well the model ranks
-    customers by their actual value.
+    customers by their actual value, relative to a perfect ranking.
 
-    Range: 0 (random ordering) to 1 (perfect ranking).
-    Equivalent to 2 × AUC − 1 for the regression ranking problem.
+    Computed as raw_gini(model) / raw_gini(oracle), where the oracle ranks
+    customers by their actual values. Range: 1 = perfect ranking,
+    0 = random ordering, negative = worse than random.
 
     This is particularly useful for CLV because the business goal is often
     to identify the top-N customers, not to predict exact spend values.
     A model with good Gini can still be used for targeting even if its
     absolute predictions are off.
     """
-    # Sort by predicted value descending
-    sorted_idx  = np.argsort(y_pred)[::-1]
-    y_sorted    = y_true[sorted_idx]
 
-    n           = len(y_true)
-    cumulative  = np.cumsum(y_sorted) / (y_true.sum() + 1e-10)
-    lorenz      = cumulative / cumulative[-1]
+    def _raw_gini(order_by: np.ndarray) -> float:
+        # Sort actuals by the given scores, descending
+        y_sorted   = y_true[np.argsort(order_by)[::-1]]
+        n          = len(y_true)
+        cumulative = np.cumsum(y_sorted) / (y_true.sum() + 1e-10)
+        # Area under the cumulative-capture curve via trapezoidal rule
+        auc = np.trapz(cumulative, np.linspace(0, 1, n))
+        return 2 * auc - 1
 
-    # Area under Lorenz curve via trapezoidal rule
-    auc_lorenz  = np.trapezoid(lorenz, np.linspace(0, 1, n))
-    gini        = 2 * auc_lorenz - 1
-    return float(np.clip(gini, 0.0, 1.0))
+    gini_model  = _raw_gini(y_pred)
+    gini_oracle = _raw_gini(y_true)
+
+    if abs(gini_oracle) < 1e-10:
+        return 0.0
+    return float(gini_model / gini_oracle)
 
 
 def spearman_rank_correlation(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -118,11 +123,11 @@ def compute_classification_metrics(
 
     Returns
     -------
-    dict with keys: accuracy, precision, recall, f1, auc_roc, auc_pr
+    dict with keys: accuracy, precision, recall, f1, auc_roc, auc_pr, brier
     """
     from sklearn.metrics import (
         accuracy_score, precision_score, recall_score, f1_score,
-        roc_auc_score, average_precision_score,
+        roc_auc_score, average_precision_score, brier_score_loss,
     )
 
     y_pred = (y_score >= threshold).astype(int)
@@ -145,6 +150,9 @@ def compute_classification_metrics(
         "f1"       : float(f1_score(y_true, y_pred, zero_division=0)),
         "auc_roc"  : auc_roc,
         "auc_pr"   : auc_pr,
+        # Brier score: mean squared error of the probability forecast
+        # (lower is better; penalises both discrimination and calibration errors)
+        "brier"    : float(brier_score_loss(y_true, np.clip(y_score, 0, 1))),
     }
 
 
