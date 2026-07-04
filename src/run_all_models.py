@@ -56,7 +56,13 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="pymc")
 
 # ── Project modules ───────────────────────────────────────────────────────────
-from src.data import run_pipeline, load_processed, CAL_END
+from src.data import (
+    run_pipeline,
+    load_processed,
+    build_inner_training_set,
+    CAL_END,
+    XGB_INNER_CAL_END,
+)
 from src.models import (
     build_bgnbd,
     build_hierarchical_bgnbd,
@@ -314,8 +320,15 @@ def step_baselines(
 ) -> dict:
     _section("STEP 4: CLASSICAL BASELINES")
 
+    # Nested temporal split for XGBoost: train targets come from inside the
+    # calibration window so the evaluation holdout stays unseen (no leakage).
+    xgb_train = None
+    if cal is not None:
+        xgb_train = build_inner_training_set(cal, inner_cal_end=XGB_INNER_CAL_END)
+
     fitted = fit_all_baselines(
-        customers, truth, cal_transactions=cal, include_pareto=False
+        customers, truth, cal_transactions=cal, include_pareto=False,
+        xgb_train=xgb_train,
     )
 
     baseline_preds = {}
@@ -378,7 +391,8 @@ def step_evaluate(
                   f"CRPS={m['post_crps']:.4f}")
         if res.get("classification"):
             c = res["classification"]
-            print(f"    P(alive): AUC={c['auc_roc']:.4f}  Brier={c['auc_pr']:.4f}")
+            print(f"    P(alive): AUC={c['auc_roc']:.4f}  AUC-PR={c['auc_pr']:.4f}  "
+                  f"Brier={c['brier']:.4f}")
 
     return eval_results
 

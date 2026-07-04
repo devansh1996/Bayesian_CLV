@@ -342,9 +342,20 @@ class RFMHeuristicBaseline(BaseBaseline):
         same bins (based on training distribution), not re-ranked.
         This is important for honest evaluation — you wouldn't have access
         to test data when building the scoring system.
+
+        Note: recency is binned on the recency/T ratio (not raw weeks), since
+        that is the quantity scored at prediction time — a ratio near 1 means
+        the customer bought recently relative to their observation window.
         """
-        for col in ["recency", "frequency", "monetary_value"]:
-            vals = data[col].values
+        recency_ratio = (
+            data["recency"] / data["T"].clip(lower=1e-6)
+        ).values
+
+        for col, vals in [
+            ("recency",        recency_ratio),
+            ("frequency",      data["frequency"].values),
+            ("monetary_value", data["monetary_value"].values),
+        ]:
             quantiles = np.linspace(0, 100, self.n_bins + 1)
             edges = np.percentile(vals, quantiles)
             # Deduplicate edges (can happen when many customers share the same value)
@@ -356,7 +367,7 @@ class RFMHeuristicBaseline(BaseBaseline):
         )
 
         print(f"RFMHeuristicBaseline fitted on {len(data):,} customers:")
-        print(f"  Recency edges:   {self.bin_edges_['recency'].round(1)}")
+        print(f"  Recency-ratio edges: {self.bin_edges_['recency'].round(3)}")
         print(f"  Frequency edges: {self.bin_edges_['frequency'].round(1)}")
         print(f"  Monetary edges:  {self.bin_edges_['monetary_value'].round(0)}")
         return self
@@ -545,6 +556,7 @@ class XGBoostCLVBaseline(BaseBaseline):
         self._spend_model = None
         self._feature_cols: Optional[list] = None
         self._cal_transactions: Optional[pd.DataFrame] = None
+        self.trained_horizon_: Optional[float] = None
 
     def _get_xgb_params(self) -> Dict[str, Any]:
         """Return XGBoost parameters, using defaults or user overrides."""
@@ -570,19 +582,30 @@ class XGBoostCLVBaseline(BaseBaseline):
         holdout_truth: pd.DataFrame,
         cal_transactions: Optional[pd.DataFrame] = None,
         eval_frac: float = 0.15,
+        target_horizon_weeks: Optional[float] = None,
     ) -> "XGBoostCLVBaseline":
         """
         Fit both the transaction and spend XGBoost models.
 
+        IMPORTANT — leakage: the supervision targets in `holdout_truth` must
+        come from a window that is *disjoint from the evaluation holdout*
+        (e.g. the inner split produced by data.build_inner_training_set()).
+        Training on the evaluation holdout makes the model's metrics
+        in-sample and invalidates any comparison against unsupervised models.
+
         Parameters
         ----------
-        data            : calibration customer-level DataFrame
+        data            : customer-level DataFrame for the training window
         holdout_truth   : ground-truth DataFrame from compute_holdout_truth()
                           must contain: customer_id, holdout_transactions, holdout_spend
-        cal_transactions: optional transaction-level calibration data; when given,
-                          inter-purchase-time and temporal features are added.
-                          Stored so predict()/predict_spend() reuse the same stream.
+        cal_transactions: optional transaction-level data for the training window;
+                          when given, inter-purchase-time and temporal features are
+                          added. Stored so predict()/predict_spend() reuse the same
+                          stream unless set_prediction_transactions() is called.
         eval_frac       : fraction of training data held back for early stopping
+        target_horizon_weeks : length (weeks) of the window the targets cover.
+                          Stored as `trained_horizon_` so predict() can rescale
+                          transaction counts to a different prediction horizon.
         """
         try:
             from xgboost import XGBRegressor
@@ -595,6 +618,7 @@ class XGBoostCLVBaseline(BaseBaseline):
 
         # ── Merge features with targets ───────────────────────────────────────
         self._cal_transactions = cal_transactions
+        self.trained_horizon_  = target_horizon_weeks
         X_full = engineer_features(data, cal_transactions)
         self._feature_cols = list(X_full.columns)
 
@@ -672,24 +696,39 @@ class XGBoostCLVBaseline(BaseBaseline):
 
         return self
 
+    def set_prediction_transactions(self, transactions: pd.DataFrame) -> None:
+        """
+        Swap the transaction stream used to build features at prediction time.
+
+        When the model is trained on an inner temporal split, its stored
+        stream only covers the inner window. Before predicting for the full
+        calibration customers, pass the full calibration stream here so the
+        IPT/temporal features are computed from the same window as the RFM
+        features in the prediction table.
+        """
+        self._cal_transactions = transactions
+
     def predict(self, data: pd.DataFrame, t_future: float = 1.0) -> np.ndarray:
         """
-        Predict transaction counts.
+        Predict transaction counts over a horizon of `t_future` weeks.
 
-        Note: XGBoost predicts a raw count, not a rate, so t_future is used
-        as a multiplier to scale predictions to different horizons. This is
-        a simplification — unlike BG/NBD, XGBoost doesn't model the rate
-        directly. For multi-horizon evaluation, refit on a target window
-        matching t_future.
+        XGBoost predicts a raw count over the window it was trained on
+        (`trained_horizon_` weeks). When that horizon is known, predictions
+        are linearly rescaled by t_future / trained_horizon_. This is a
+        simplification — unlike BG/NBD, XGBoost doesn't model the rate
+        directly — but keeps horizons comparable across models. If
+        trained_horizon_ was not provided at fit time, the raw count is
+        returned unscaled.
         """
         if self._tx_model is None:
             raise RuntimeError("Call fit() before predict()")
         X = engineer_features(data, self._cal_transactions).reindex(
             columns=self._feature_cols, fill_value=0
         )
-        raw = self._tx_model.predict(X)
-        # Scale to the requested horizon — assume training target was ~13 weeks
-        return np.maximum(raw, 0.0)
+        raw = np.maximum(self._tx_model.predict(X), 0.0)
+        if self.trained_horizon_ is not None and self.trained_horizon_ > 0:
+            raw = raw * (t_future / self.trained_horizon_)
+        return raw
 
     def predict_spend(self, data: pd.DataFrame) -> np.ndarray:
         if self._spend_model is None:
@@ -778,6 +817,7 @@ def fit_all_baselines(
     holdout_truth: pd.DataFrame,
     cal_transactions: Optional[pd.DataFrame] = None,
     include_pareto: bool = False,
+    xgb_train: Optional[Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame], Optional[float]]] = None,
 ) -> Dict[str, BaseBaseline]:
     """
     Fit all baselines and return them in a dict keyed by name.
@@ -789,6 +829,11 @@ def fit_all_baselines(
     cal_transactions: optional transaction-level calibration data, passed to the
                       XGBoost baseline to enable IPT / temporal features
     include_pareto  : whether to fit the Pareto/NBD model (requires lifetimes)
+    xgb_train       : optional (customers, truth, transactions, horizon_weeks)
+                      tuple from data.build_inner_training_set(). When given,
+                      XGBoost trains on this leakage-free inner split instead of
+                      the evaluation holdout, and its prediction-time feature
+                      stream is reset to `cal_transactions`.
 
     Returns
     -------
@@ -796,7 +841,9 @@ def fit_all_baselines(
 
     Example
     -------
-        baselines = fit_all_baselines(customers, truth, cal_transactions=cal)
+        inner = build_inner_training_set(cal)
+        baselines = fit_all_baselines(customers, truth,
+                                      cal_transactions=cal, xgb_train=inner)
         for name, model in baselines.items():
             preds = model.predict(customers, t_future=13.0)
             print(f"{name}: {preds.mean():.3f}")
@@ -815,7 +862,27 @@ def fit_all_baselines(
 
     print("\n── Fitting XGBoostCLVBaseline ──")
     xgb = XGBoostCLVBaseline()
-    xgb.fit(customers, holdout_truth, cal_transactions=cal_transactions)
+    if xgb_train is not None:
+        # Leakage-free path: train on the inner temporal split, then point the
+        # feature stream at the full calibration window for prediction.
+        inner_customers, inner_truth, inner_tx, inner_horizon = xgb_train
+        print(f"  Training on inner split: {len(inner_customers):,} customers, "
+              f"target horizon {inner_horizon:.1f} weeks (evaluation holdout unseen)")
+        xgb.fit(
+            inner_customers, inner_truth,
+            cal_transactions=inner_tx,
+            target_horizon_weeks=inner_horizon,
+        )
+        if cal_transactions is not None:
+            xgb.set_prediction_transactions(cal_transactions)
+    else:
+        warnings.warn(
+            "XGBoost is training on the evaluation holdout (no xgb_train "
+            "given) — its metrics will be in-sample. Pass an inner training "
+            "set from data.build_inner_training_set() for a fair comparison.",
+            UserWarning,
+        )
+        xgb.fit(customers, holdout_truth, cal_transactions=cal_transactions)
     fitted[xgb.name] = xgb
 
     if include_pareto:

@@ -30,6 +30,11 @@ NON_PRODUCT_CODES = {
  
 # Countries with fewer customers than this threshold get collapsed into "Other"
 MIN_COUNTRY_CUSTOMERS = 30
+
+# Inner split for supervised baselines (XGBoost): features are built from
+# transactions before this date, targets from [this date, CAL_END). This keeps
+# the real holdout (CAL_END onward) unseen by every model during training.
+XGB_INNER_CAL_END = "2010-10-01"
  
  
 # ──────────────────────────────────────────────────────────────────────────────
@@ -472,6 +477,62 @@ def run_pipeline(
     return df, cal, holdout, customers, truth
  
  
+# ──────────────────────────────────────────────────────────────────────────────
+# 8. INNER TRAINING SET  (leakage-free supervised-baseline training)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def build_inner_training_set(
+    cal: pd.DataFrame,
+    inner_cal_end: str = XGB_INNER_CAL_END,
+    time_unit: str = "W",
+    min_country_customers: int = MIN_COUNTRY_CUSTOMERS,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, float]:
+    """
+    Build a nested temporal split *inside* the calibration window for training
+    supervised baselines (XGBoost) without touching the real holdout.
+
+    The calibration transactions are split at `inner_cal_end`:
+        inner calibration : features (RFM, IPT, temporal) from before the date
+        inner target      : supervision targets from [inner_cal_end, CAL_END)
+
+    The real holdout (CAL_END onward) therefore stays unseen by every model,
+    keeping the RQ1 comparison fair.
+
+    Parameters
+    ----------
+    cal            : calibration transactions from temporal_split()
+    inner_cal_end  : split date inside the calibration window
+    time_unit      : time unit for recency/T (must match the outer pipeline)
+    min_country_customers : threshold for country collapsing
+
+    Returns
+    -------
+    inner_customers : customer-level features from the inner calibration window
+    inner_truth     : per-customer targets over the inner target window
+    inner_cal       : inner-calibration transactions (for IPT/temporal features)
+    inner_horizon   : length of the inner target window in weeks
+    """
+    print("\n" + "-" * 60)
+    print(f"INNER TRAINING SPLIT (supervised baselines) at {inner_cal_end}")
+    print("-" * 60)
+
+    inner_cal, inner_target = temporal_split(cal, cal_end=inner_cal_end)
+
+    inner_customers = aggregate_customers(inner_cal, time_unit=time_unit)
+    inner_customers = collapse_countries(
+        inner_customers, min_customers=min_country_customers
+    )
+    inner_truth = compute_holdout_truth(inner_target, inner_customers)
+
+    inner_horizon = (
+        inner_target["InvoiceDate"].max() - pd.Timestamp(inner_cal_end)
+    ).days / 7.0
+    print(f"\nInner target horizon: {inner_horizon:.1f} weeks "
+          f"({len(inner_customers):,} training customers)")
+
+    return inner_customers, inner_truth, inner_cal, inner_horizon
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CONVENIENCE LOADERS  (use in notebooks after pipeline has run once)
 # ──────────────────────────────────────────────────────────────────────────────
