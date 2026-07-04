@@ -1,5 +1,10 @@
 data/processed/
-outputs/
+# Track pipeline result tables, figures and EDA plots; ignore everything else
+# under outputs/ (notably the large MCMC traces).
+outputs/*
+!outputs/eda/
+!outputs/results/
+!outputs/figures/
 .env
 __pycache__/
 *.pyc
@@ -26,3 +31,9 @@ texts/thesis.pdf
 texts/thesis_clv.pdf
 texts/pdflatex_out.txt
 texts/pdflatex_err.txt
+
+# Superseded working files (kept on disk, not tracked)
+thesis_code (1).docx
+docx_extract.txt
+Thesis= Google.md
+compile_thesis.py
