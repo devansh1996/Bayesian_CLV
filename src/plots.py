@@ -200,7 +200,10 @@ def plot_rhat_summary(trace, model_name: str = "Model") -> plt.Figure:
     Bar chart of per-parameter R-hat values.
     Red dashed line at 1.01 marks the convergence threshold.
     """
-    rhat_df = az.rhat(trace).to_dataframe().reset_index()
+    # az.summary robustly expands scalar and vector parameters into named
+    # components (e.g. r[France]) and exposes an 'r_hat' column.
+    summ = az.summary(trace)
+    rhat_df = summ[["r_hat"]].reset_index()
     rhat_df.columns = ["parameter", "rhat"]
     rhat_df = rhat_df.sort_values("rhat", ascending=False)
 
@@ -576,7 +579,7 @@ def plot_clv_distribution(
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     # ── Left: overall CLV distribution ───────────────────────────────────────
-    axes[0].hist(clv_mean.clip(upper=np.percentile(clv_mean, 99)),
+    axes[0].hist(np.minimum(clv_mean, np.percentile(clv_mean, 99)),
                  bins=50, color=PAL["bayesian"], edgecolor="white", alpha=0.85)
     axes[0].axvline(clv_mean.mean(), color=PAL["accent"], linestyle="--",
                     linewidth=1.5, label=f"Mean: £{clv_mean.mean():.0f}")
