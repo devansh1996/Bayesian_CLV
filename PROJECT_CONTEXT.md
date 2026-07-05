@@ -8,10 +8,21 @@ Sections §1–§7j are the historical narrative; **§0 below is the live status
 
 ## 0. CURRENT STATUS & NEXT STEPS (read this first)
 
-**Where we are:** the pipeline runs end-to-end and produces trustworthy results.
-`thesis_v4.pdf` (59 pp) is the last *built* PDF. Since v4, the **H2/H3 analysis
-redesign** was implemented in CODE + DATA but the **thesis prose is not yet updated
-and v5 is not built.** All code committed (HEAD = commit `8ebfc26`), working tree clean.
+**DONE through thesis_v5.pdf (2026-07-05).** Pipeline runs end-to-end; all chapters
+filled with real results; H2/H3 analysis redesign implemented in code, data, AND prose;
+`thesis_v5.pdf` (59 pp) built with a clean log. Working tree clean. Final verdicts:
+**H1 supported, H2 partially supported, H3 not supported.** The "NEXT SESSION" list
+below is now COMPLETE (kept for provenance). Remaining open items are user-side only:
+verify the 4 added bib entries (`efron1975`, `rossi2005`, `berger1985`, `venkatesan2004`)
+and note to the supervisor that H2/H3 operationalisation was refined mid-thesis.
+Possible future polish: a dedicated 3-way (none/partial/complete) H2 figure; a
+`/code-review` or `prose-polish` pass on the rewritten Ch5/Ch6 sections.
+
+---
+
+### (historical) Where we were mid-redesign
+`thesis_v4.pdf` was the last built PDF before the H2/H3 redesign; the steps below were
+then carried out to produce v5.
 
 **What the redesign changed (committed, results regenerated in `outputs/`):**
 - **H2** — added the no-pooling arm (`fit_nopooled_bgnbd` in `models.py`; wired into
