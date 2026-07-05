@@ -78,6 +78,9 @@ from src.models import (
     predict_p_alive_hier,
     posterior_predictive_counts,
     compute_clv_posterior,
+    compute_clv_predictive,
+    fit_nopooled_bgnbd,
+    predict_transactions_nopooled,
     summarise_trace,
 )
 from src.priors import data_informed_priors
@@ -400,6 +403,8 @@ def step_bayesian_predictions(
         "tx_mean"      : tx_bgnbd.mean(axis=0),
         "p_alive"      : p_alive_bgnbd,
         "clv_posterior": clv_bgnbd,
+        # Predictive CLV (count variability included) — used for decision rules
+        "clv_predictive": compute_clv_predictive(tx_bgnbd, monetary_samples, repeat_mask),
         "clv_mean"     : clv_bgnbd.mean(axis=0),
     }
 
@@ -423,6 +428,7 @@ def step_bayesian_predictions(
         "tx_mean"      : tx_hier.mean(axis=0),
         "p_alive"      : p_alive_hier,
         "clv_posterior": clv_hier,
+        "clv_predictive": compute_clv_predictive(tx_hier, monetary_samples, repeat_mask),
         "clv_mean"     : clv_hier.mean(axis=0),
     }
 
@@ -625,14 +631,18 @@ def step_decision_analysis(
     truth: pd.DataFrame,
     bayesian_preds: dict,
     baseline_preds: dict,
+    t_future: Optional[float] = None,
 ) -> tuple:
     """
     RQ3/H3 — decision-theoretic targeting: for each Bayesian model, compare
     posterior-probability vs point-estimate vs oracle targeting across a grid
-    of intervention costs (uses the CLV posterior).
+    of intervention costs. Uses the posterior *predictive* CLV: P(CLV > c)
+    computed from the posterior of expected CLV saturates at 0/1 (parameter
+    uncertainty only) and degenerates into arbitrary tie-breaking.
 
-    RQ2/H2 — country-level transaction MAE for every model, to test whether the
-    hierarchical model's partial pooling helps within country segments.
+    RQ2/H2 — country-level transaction MAE for every model, including a
+    NO-pooling benchmark (independent BG/NBD per segment) so the canonical
+    three-way pooling comparison (complete vs partial vs none) is reported.
 
     Returns (targeting_sims, country_metrics) for downstream plotting.
     """
@@ -645,11 +655,12 @@ def step_decision_analysis(
     # ── RQ3: targeting simulation (Bayesian models only — need a posterior) ───
     targeting_sims = {}
     for name, preds in bayesian_preds.items():
-        if preds.get("clv_posterior") is None:
+        clv_dist = preds.get("clv_predictive", preds.get("clv_posterior"))
+        if clv_dist is None:
             continue
         print(f"\n── Targeting simulation: {name} ──")
         sweep = targeting_simulation_sweep(
-            preds["clv_posterior"], y_true_spend,
+            clv_dist, y_true_spend,
             cost_grid=COST_GRID, targeting_depths=TARGETING_DEPTHS,
         )
         targeting_sims[name] = sweep
@@ -670,6 +681,17 @@ def step_decision_analysis(
     print("\n── Country-level transaction MAE ──")
     all_preds = {**bayesian_preds, **baseline_preds}
     tx_predictions = {name: preds["tx_mean"] for name, preds in all_preds.items()}
+
+    # No-pooling benchmark: independent BG/NBD per segment, completing the
+    # three-way pooling comparison (complete vs partial vs none) for H2.
+    if t_future is not None:
+        print("\n── No-pooling benchmark (independent per-segment fits) ──")
+        nopool_priors = data_informed_priors(customers, verbose=False)["bgnbd"]
+        seg_models = fit_nopooled_bgnbd(customers, priors=nopool_priors)
+        tx_predictions["No pooling (per segment)"] = predict_transactions_nopooled(
+            seg_models, customers, t_future=t_future,
+        )
+
     country_metrics = country_level_metrics(
         actual=y_true_tx, predictions=tx_predictions, countries=countries,
     )
@@ -864,7 +886,7 @@ def main():
 
     # Step 6b — Decision-theoretic (RQ3) + country-level (RQ2) analysis
     targeting_sims, country_metrics = step_decision_analysis(
-        customers, truth, bayesian_preds, baseline_preds
+        customers, truth, bayesian_preds, baseline_preds, t_future=t_future
     )
 
     # Step 7 — Thesis plots

@@ -429,6 +429,60 @@ def predict_p_alive_hier(
     return p_alive.mean(axis=0)
 
 
+# ── No-pooling benchmark (H2): independent BG/NBD per segment ─────────────────
+
+def fit_nopooled_bgnbd(
+    customers: pd.DataFrame,
+    segment_col: str = "country_segment",
+    priors: Optional[Dict[str, float]] = None,
+    draws: int = 1000,
+    tune: int = 1000,
+    chains: int = 4,
+    target_accept: float = 0.9,
+    random_seed: int = 42,
+    progressbar: bool = False,
+) -> Dict[str, BetaGeoModel]:
+    """Fit an independent BetaGeoModel per segment (the NO-pooling benchmark).
+
+    Completes the canonical three-way pooling comparison for H2 (complete vs
+    partial vs none). All segments share the same weakly informative prior
+    scales; no information is shared through the likelihood. Models are refit
+    on demand rather than persisted — the four segment fits take ~2 minutes.
+    """
+    seg_models: Dict[str, BetaGeoModel] = {}
+    for seg, grp in customers.groupby(segment_col):
+        print(f"  No-pooling fit: {seg} (n={len(grp):,})")
+        model = BetaGeoModel(
+            data=_bgnbd_df(grp),
+            model_config=_halfnormal_config(priors, ["r", "alpha", "a", "b"]),
+        )
+        model.build_model()
+        model.fit(draws=draws, tune=tune, chains=chains,
+                  target_accept=target_accept, random_seed=random_seed,
+                  progressbar=progressbar)
+        seg_models[seg] = model
+    return seg_models
+
+
+def predict_transactions_nopooled(
+    seg_models: Dict[str, BetaGeoModel],
+    customers: pd.DataFrame,
+    t_future: float,
+    segment_col: str = "country_segment",
+) -> np.ndarray:
+    """Posterior-mean expected transactions from the per-segment models,
+    aligned to the row order of `customers`. Returns (n_customers,)."""
+    out = np.full(len(customers), np.nan)
+    pos = {cid: i for i, cid in enumerate(customers["customer_id"])}
+    for seg, model in seg_models.items():
+        grp = customers[customers[segment_col] == seg]
+        da = model.expected_purchases(data=_bgnbd_df(grp), future_t=float(t_future))
+        preds = _stack_samples(da).mean(axis=0)
+        idx = [pos[cid] for cid in grp["customer_id"]]
+        out[idx] = preds
+    return out
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. CLV POSTERIOR
 # ──────────────────────────────────────────────────────────────────────────────
@@ -482,6 +536,26 @@ def compute_clv_posterior(
     full_monetary[:, ~repeat_mask] = monetary_predictions.mean()   # impute pop mean
 
     return tx_predictions * full_monetary * margin
+
+
+def compute_clv_predictive(
+    tx_predictions: np.ndarray,
+    monetary_predictions: np.ndarray,
+    repeat_mask: np.ndarray,
+    margin: float = 1.0,
+    seed: int = 42,
+) -> np.ndarray:
+    """Posterior *predictive* CLV: realised transaction counts × expected spend.
+
+    compute_clv_posterior() propagates only parameter uncertainty (it multiplies
+    posteriors of expectations), so P(CLV > c) computed from it saturates at
+    0/1 for most customers and is useless as a decision score. Decision rules
+    about realised outcomes must use the predictive distribution: here the
+    count component is drawn as Poisson(E[X | draw]) per draw (as in
+    posterior_predictive_counts) before multiplying by expected spend.
+    """
+    counts = posterior_predictive_counts(tx_predictions, seed=seed)
+    return compute_clv_posterior(counts, monetary_predictions, repeat_mask, margin)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
