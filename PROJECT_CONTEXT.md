@@ -1,8 +1,58 @@
-# PROJECT_CONTEXT.md — session handoff & full state (2026-07-04)
+# PROJECT_CONTEXT.md — session handoff & full state (updated 2026-07-05)
 
-Reference document for the "fix shortcomings → produce real thesis results (v4)" effort.
-Approved plan: `/home/devan/.claude/plans/structured-petting-babbage.md`.
-Companion docs: `CLAUDE.md` (repo instructions), memory file `project_review_findings_2026-07.md`.
+Reference document for the "fix shortcomings → produce real thesis results" effort.
+Companion docs: `CLAUDE.md` (repo instructions), memory `project_review_findings_2026-07.md`.
+Sections §1–§7j are the historical narrative; **§0 below is the live status — read it first.**
+
+---
+
+## 0. CURRENT STATUS & NEXT STEPS (read this first)
+
+**Where we are:** the pipeline runs end-to-end and produces trustworthy results.
+`thesis_v4.pdf` (59 pp) is the last *built* PDF. Since v4, the **H2/H3 analysis
+redesign** was implemented in CODE + DATA but the **thesis prose is not yet updated
+and v5 is not built.** All code committed (HEAD = commit `8ebfc26`), working tree clean.
+
+**What the redesign changed (committed, results regenerated in `outputs/`):**
+- **H2** — added the no-pooling arm (`fit_nopooled_bgnbd` in `models.py`; wired into
+  `step_decision_analysis`). `country_level_mae.csv` now has a "No pooling (per
+  segment)" column. Three-way holdout tx-MAE: no-pooling worst in every small segment
+  (France 2.444, Germany 1.670) but best for "Other" (1.627); complete worst for
+  "Other" (1.695); **partial pooling never worst, lowest weighted non-UK MAE 1.746**
+  (vs none 1.755, complete 1.757). ⇒ H2 verdict should become **Partially supported**.
+- **H3** — targeting sim now uses the posterior **predictive** CLV
+  (`compute_clv_predictive`), not the expected-CLV posterior (which saturated
+  P(CLV>c) at 0/1). `improvement_pct` at cost=600/depth=0.20 went **−55.6% → −1.7%**
+  (near-parity; slightly positive at high cost). ⇒ H3 verdict stays **Not supported**
+  but is now "near-parity, expected-value ranking suffices"; the saturation artifact
+  is itself a methodological finding (non-predictive posteriors are a decision-rule
+  pitfall — same class as the coverage fix). `analysis/h3_risk_metrics.py` +
+  `outputs/results/h3_risk*.csv` hold hit-rate / wasted-spend numbers for the writeup.
+
+**NEXT SESSION — remaining work to produce v5:**
+1. **ch5_results.tex H2 section** (`sec:results-h2`): rewrite for the three-way
+   comparison; report the no-pooling column (now in `tab:country_mae`); verdict
+   "Partially supported" — partial pooling beats no-pooling in small segments and is
+   the best aggregate, but cannot beat complete pooling where segments barely differ.
+2. **ch5_results.tex H3 section** (`sec:results-h3`): update numbers to the predictive
+   sim (headline −1.7% at £600/20%, near-parity across grid); add the
+   expected-vs-predictive-probability pitfall as a finding. Old prose still cites the
+   −55.6% figure — replace.
+3. **ch5 verdicts table** (`tab:verdicts`): H2 → "Partially supported".
+4. **ch6_conclusion.tex**: mirror H2 (partially supported, adaptive shrinkage) and H3
+   (near-parity + pitfall) in the summary paragraphs (L18/L21 area).
+5. **Optional**: `plot_country_mae_comparison` now shows 6 models incl. no-pooling —
+   check the figure reads well; a dedicated 3-way (none/partial/complete) panel would
+   be cleaner for the H2 figure.
+6. **Build**: `cd texts && ./build_thesis.sh` → `thesis_v5.pdf`; confirm clean log
+   (no `^!`, no undefined refs/citations). Commit prose + v5.
+7. Exact fill-in numbers are in §7j and §0 above; read CSVs in `outputs/results/` for
+   anything else. Flag to user: amending hypothesis operationalisation mid-thesis is
+   worth a note to their supervisor.
+
+**Env reminder:** run `~/.venvs/bayesclv/bin/python src/…` from repo root;
+`run_all_models.py --skip-sampling` reuses saved traces (~3 min incl. the 4 no-pooling
+fits). Do NOT resurrect the hand-rolled BG/NBD likelihood (see §7f).
 
 ---
 
