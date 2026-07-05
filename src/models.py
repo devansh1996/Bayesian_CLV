@@ -433,6 +433,24 @@ def predict_p_alive_hier(
 # 4. CLV POSTERIOR
 # ──────────────────────────────────────────────────────────────────────────────
 
+def posterior_predictive_counts(
+    expected_tx_posterior: np.ndarray, seed: int = 42
+) -> np.ndarray:
+    """Posterior *predictive* of the holdout transaction count.
+
+    `expected_tx_posterior` is the posterior of the conditional *expected*
+    transactions E[X] (one row per draw). It captures parameter uncertainty but
+    not the count sampling variability, so credible intervals built from it are
+    far too narrow to cover integer outcomes. Here we add that variability by
+    drawing an actual count per (draw, customer) from Poisson(E[X | draw]) — a
+    standard conditional-mean posterior-predictive approximation for BG/NBD.
+
+    Returns an array the same shape as the input (float counts).
+    """
+    rng = np.random.default_rng(seed)
+    return rng.poisson(np.clip(expected_tx_posterior, 0.0, None)).astype(float)
+
+
 def compute_clv_posterior(
     tx_predictions: np.ndarray,
     monetary_predictions: np.ndarray,

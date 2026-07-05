@@ -76,6 +76,7 @@ from src.models import (
     predict_spend,
     predict_transactions_hier,
     predict_p_alive_hier,
+    posterior_predictive_counts,
     compute_clv_posterior,
     summarise_trace,
 )
@@ -115,10 +116,14 @@ TOP_K_FRACS = [0.05, 0.10, 0.20, 0.30, 0.50]
 
 # ── Decision-theoretic targeting (RQ3 / H3) ──────────────────────────────────
 # Per-customer intervention cost (e.g. a discount voucher / outreach cost), in £.
-# A grid is swept for sensitivity; PRIMARY_COST drives the headline figure.
+# Costs are scaled to CLV magnitude (mean holdout CLV ≈ £400, with a heavy tail):
+# with a much smaller cost, P(CLV > cost) saturates at ~1 for every customer and
+# the probability ranking is uninformative, so the cost threshold must cut through
+# the bulk of the CLV posteriors for the decision-theoretic comparison to be
+# meaningful. A grid is swept for sensitivity; PRIMARY_COST drives the headline.
 TARGETING_DEPTHS = [0.05, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50]
-COST_GRID        = [5.0, 20.0, 50.0]
-PRIMARY_COST     = 20.0
+COST_GRID        = [100.0, 300.0, 600.0, 1200.0, 2000.0]
+PRIMARY_COST     = 600.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -391,6 +396,7 @@ def step_bayesian_predictions(
 
     predictions["BG/NBD (Bayesian)"] = {
         "tx_posterior" : tx_bgnbd,
+        "tx_predictive": posterior_predictive_counts(tx_bgnbd),
         "tx_mean"      : tx_bgnbd.mean(axis=0),
         "p_alive"      : p_alive_bgnbd,
         "clv_posterior": clv_bgnbd,
@@ -413,6 +419,7 @@ def step_bayesian_predictions(
 
     predictions["Hierarchical BG/NBD"] = {
         "tx_posterior" : tx_hier,
+        "tx_predictive": posterior_predictive_counts(tx_hier),
         "tx_mean"      : tx_hier.mean(axis=0),
         "p_alive"      : p_alive_hier,
         "clv_posterior": clv_hier,
@@ -469,6 +476,7 @@ def step_evaluate(
     truth: pd.DataFrame,
     bayesian_preds: dict,
     baseline_preds: dict,
+    customers: pd.DataFrame,
 ) -> list:
     _section("STEP 5: EVALUATION")
 
@@ -476,20 +484,29 @@ def step_evaluate(
     y_true_spend  = truth["holdout_spend"].values.astype(float)
     y_true_active = truth["is_active"].values.astype(int)
 
+    # P(alive) is trivially 1.0 for one-time buyers (no repeat ⇒ cannot have
+    # dropped out), so its discrimination is only meaningful on repeat customers.
+    repeat_mask = customers["frequency"].values > 0
+
     all_preds = {**bayesian_preds, **baseline_preds}
     eval_results = []
 
     for name, preds in all_preds.items():
         print(f"\n  Evaluating: {name}")
+        has_alive = preds["p_alive"] is not None
+        # Coverage/CRPS use the posterior *predictive* of the count (not E[X]) so
+        # the credible intervals reflect outcome variability, not just parameter
+        # uncertainty; falls back to the expected-value posterior if absent.
+        post_samples = preds.get("tx_predictive", preds.get("tx_posterior"))
         res = evaluate_model(
             model_name        = name,
             y_true_tx         = y_true_tx,
             y_pred_tx         = preds["tx_mean"],
             y_true_spend      = y_true_spend,
             y_pred_spend      = preds["clv_mean"],
-            y_true_active     = y_true_active if preds["p_alive"] is not None else None,
-            y_score_alive     = preds["p_alive"],
-            posterior_samples = preds["tx_posterior"],
+            y_true_active     = y_true_active[repeat_mask] if has_alive else None,
+            y_score_alive     = preds["p_alive"][repeat_mask] if has_alive else None,
+            posterior_samples = post_samples,
             top_k_fracs       = TOP_K_FRACS,
         )
         eval_results.append(res)
@@ -840,7 +857,7 @@ def main():
     baseline_preds = step_baselines(customers, truth, t_future, cal=cal)
 
     # Step 5 — Evaluate all models
-    eval_results = step_evaluate(truth, bayesian_preds, baseline_preds)
+    eval_results = step_evaluate(truth, bayesian_preds, baseline_preds, customers)
 
     # Step 6 — Save results tables
     comparison = step_save_results(eval_results)
