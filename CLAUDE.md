@@ -15,13 +15,14 @@ The codebase is organized around three thesis research questions, and many funct
 
 **Python 3.10–3.12 only** — PyMC 5.x is not compatible with 3.13+.
 
+The working WSL environment for this repo is a **Python 3.11 venv at `~/.venvs/bayesclv`** (Ubuntu 26.04 ships only 3.14, so it was created with `uv`; the in-repo Windows `.venv/` is unused for the pipeline). Run everything as `~/.venvs/bayesclv/bin/python src/…` from the repo root. Standard BG/NBD and Gamma-Gamma are fitted with **pymc-marketing** (the hand-rolled likelihood was ill-conditioned and would not sample); the hierarchical model is custom. See `PROJECT_CONTEXT.md` for the full history.
+
 ```bash
-# WSL/Ubuntu one-time setup
-sudo apt update && sudo apt install -y build-essential python3-dev libhdf5-dev libnetcdf-dev python3-venv
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+# Reproduce the environment (uv installs CPython 3.11)
+uv venv ~/.venvs/bayesclv --python 3.11
+uv pip install -r requirements.txt --python ~/.venvs/bayesclv/bin/python
+# (classic path, if python3.11 is available:)
+#   python3.11 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 ```
 
 All commands below assume the `.venv` is activated **and that you run from the repo root** — every path in the code is relative to the working directory (e.g. `data/raw/...`, `outputs/...`), and `run_all_models.py` does `sys.path.insert(0, <repo root>)` and imports as `from src.data import ...`.
@@ -108,10 +109,76 @@ cd texts && ./build_thesis.sh -v 5   # force a specific version number
 ```
 After building, confirm a clean log: no `^!` errors, no "Citation ... undefined", no "Reference ... undefined".
 
-**Versioned output convention:** each round of edits produces an incrementing `texts/thesis_vN.pdf` (v1, v2, v3, …). `build_thesis.sh` auto-bumps to the next unused number. Do not overwrite an existing version. As of the last session: **v3 is current (54 pages)** — v1 = first clean build, v2 = em-dash/prose-polish pass, v3 = supervisor-feedback revisions.
+**Versioned output convention:** each round of edits produces an incrementing `texts/thesis_vN.pdf` (v1, v2, v3, …). `build_thesis.sh` auto-bumps to the next unused number. Do not overwrite an existing version. As of the last session: **v4 is current (59 pages)** — v1 = first clean build, v2 = em-dash/prose-polish pass, v3 = supervisor-feedback revisions, v4 = first build with real pipeline results (Chapter 5/6 filled from `outputs/`, methodology reconciled).
 
 **`prose-polish` skill** (`.claude/skills/prose-polish/`): an academic copy-edit pass (remove em-dashes → correct punctuation, vary cadence, cut AI clichés). It is explicitly **not** an AI-/plagiarism-detection-evasion tool and must not be used or described as one — improve writing quality only; the author owns authorship/policy decisions. Note: en-dashes in numeric ranges (`--`) are correct and left alone; only em-dashes (`---`, `—`) are removed; never touch citations, refs, equations, numbers, or `tikz_*.tex`.
 
 **Last session's feedback revisions (in v3):** added Ch. 2 sections — *Probabilistic Models for Customer-Base Analysis* (Pareto/NBD → BG/NBD, Gamma-Gamma foreshadowing), *Foundations for the Hierarchical and Decision-Theoretic Extensions* (H2/H3 literature), and *Research Gap*; softened over-strong claims about ML uncertainty and "no existing approach"; added a source note to Table 2.1 (`tikz_evolution_table.tex`). Added 4 references to `references_clv.bib`: `efron1975`, `rossi2005`, `berger1985`, `venkatesan2004` — **user still to verify their metadata** against a reference manager.
 
 **Open item:** repo has **no git commits yet**; the thesis source and `thesis_vN.pdf` files are untracked. An initial commit was offered but not yet made. `.gitignore` already excludes LaTeX build artifacts (`*.aux`, `*.bcf`, `*.log`, etc.) and `.venv/` while keeping the versioned PDFs.
+
+# CLAUDE.md
+
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
