@@ -283,6 +283,46 @@ Path to real, trustworthy results — options put to the user:
 The hierarchical BG/NBD (thesis H2 contribution) must sample regardless, so its
 parameterization needs the same fix whichever path is chosen.
 
+## 7f. DECISION MADE: adopt pymc-marketing (2026-07-05)
+
+User chose to adopt `pymc-marketing` (v0.8.0, already installed). Benchmarks on the
+real data (`customers.parquet`):
+- `BetaGeoModel` (pooled BG/NBD): **69.5s**, R-hat 1.002, ESS 1581 (default sampler).
+- `GammaGammaModel`: fast (~seconds).
+- Root cause of the hand-rolled failure identified: pmm uses **Fader-Hardie
+  expression (4)** — `logp = d1 + d2 + log(c3 + switch(x>0, c4, 0))`, `c4=a/(b+x-1)`,
+  `c3=((α+t_x)/(α+T))^(r+x)` — with **no `-inf`** in the graph. The custom model used
+  `logaddexp(alive, -inf dead)`, and the `-inf` wrecks HMC trajectory energy → max
+  tree depth. (Bonus: the custom GG population-mean formula was WRONG — used
+  `q·γ/(q-1)`; pmm correctly uses `v·p/(q-1)`. pmm GG vars are `p, q, v` not `p,q,gamma`.)
+
+### pmm API facts (v0.8.0)
+- `BetaGeoModel(data=df)` where df has `customer_id, frequency, recency, T`.
+  Posterior vars `r, alpha, a, b`. Methods return FULL posteriors `(chain,draw,customer)`:
+  `expected_purchases(data, future_t=)`, `expected_probability_alive(data)`.
+  Default priors HalfFlat. Override via `model_config={'r_prior': Prior('HalfNormal', sigma=..)}`.
+  Persist with `model.save(path)` / `BetaGeoModel.load(path)`.
+- `GammaGammaModel(data=df)` df has `customer_id, frequency, monetary_value` (repeat
+  customers, frequency>0). Vars `p,q,v`. `expected_customer_spend(data)` → full posterior.
+- Integration plan for `src/models.py`: replace `build_bgnbd`/`build_gamma_gamma` with
+  pmm wrappers; rewrite prediction fns to call pmm methods (stack chain×draw →
+  (n_samples, n_cust)); keep `compute_clv_posterior` (tx × spend). Update
+  `run_all_models.step_bayesian` / `step_bayesian_predictions` to hold pmm model objects
+  and use `model.save/load` for `--skip-sampling`. `plots.py` reads posterior `r,alpha,a,b`
+  — still present, should keep working.
+
+### Hierarchical H2 model — the hard part (still being resolved)
+pmm has NO hierarchical BG/NBD. Custom model with the STABLE logp + log-normal
+non-centered partial pooling **still funnels badly**: even 1000 iters times out; the
+tiny segments (France n=54, Germany n=74) drive a severe funnel that non-centering +
+tight `sigma~HalfNormal(0.25)` + `target_accept=0.95` haven't cleanly fixed. A full
+1000/1000x4 run is going in the background (task `bbazo2zid`) to get real
+divergence/R-hat numbers. If it converges acceptably → use it. If not, options:
+(a) make only purchase-rate `(r,alpha)` hierarchical, keep dropout `(a,b)` pooled
+(halves the funnels, still tests H2); (b) even tighter sigma / stronger pooling;
+(c) reconsider segmentation. **This is the main open technical risk.** Segments (from
+data): United Kingdom 4152, Other 242, Germany 74, France 54.
+
 ## 8. Remaining work (in order)
 
 1. **Wait for pipeline** → verify outputs + diagnostics per §7 acceptance checks.

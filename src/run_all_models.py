@@ -64,17 +64,22 @@ from src.data import (
     XGB_INNER_CAL_END,
 )
 from src.models import (
-    build_bgnbd,
-    build_hierarchical_bgnbd,
-    build_gamma_gamma,
-    fit_model,
-    load_trace,
-    predict_conditional_transactions,
-    predict_monetary_value,
+    fit_bgnbd,
+    fit_gamma_gamma,
+    fit_hierarchical_bgnbd,
+    load_bgnbd,
+    load_gamma_gamma,
+    load_hier_trace,
+    get_idata,
+    predict_transactions,
     predict_p_alive,
+    predict_spend,
+    predict_transactions_hier,
+    predict_p_alive_hier,
     compute_clv_posterior,
     summarise_trace,
 )
+from src.priors import data_informed_priors
 from src.baselines import fit_all_baselines
 from src.evaluation import (
     evaluate_model,
@@ -95,9 +100,11 @@ for _d in [RESULTS_DIR, FIGURES_DIR, TRACES_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 
 # ── MCMC sampling config ──────────────────────────────────────────────────────
+# 1000 draws × 4 chains = 4000 posterior samples — ample for these low-dimensional
+# models (the hierarchical model raises target_accept to 0.95 internally).
 SAMPLING_CONFIG = dict(
-    draws         = 2000,
-    tune          = 2000,
+    draws         = 1000,
+    tune          = 1000,
     chains        = 4,
     target_accept = 0.9,
     random_seed   = 42,
@@ -287,56 +294,65 @@ def step_data(force_rerun: bool = False):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def step_bayesian(customers: pd.DataFrame, skip_sampling: bool = False) -> dict:
+    """Fit the three Bayesian models. Returns a dict of *fitted objects*:
+    'bgnbd' (BetaGeoModel), 'gamma_gamma' (GammaGammaModel), 'bgnbd_hier'
+    (InferenceData). Standard BG/NBD and Gamma-Gamma use pymc-marketing; the
+    hierarchical model is the custom stable-logp implementation.
+    """
     _section("STEP 2: BAYESIAN MODELS (MCMC)")
 
-    traces = {}
+    # Data-informed HalfNormal priors (scaled to this dataset); see src/priors.py.
+    priors = data_informed_priors(customers, verbose=False)
+    models = {}
 
-    # 2a. Standard BG/NBD ─────────────────────────────────────────────────────
+    # 2a. Standard BG/NBD (pymc-marketing) ────────────────────────────────────
     print("\n── 2a. Standard BG/NBD ──────────────────────────────────────")
-    trace_path = TRACES_DIR / "bgnbd_standard.nc"
-    if skip_sampling and trace_path.exists():
-        print("  Loading saved trace...")
-        traces["bgnbd"] = load_trace("bgnbd_standard")
+    if skip_sampling and (TRACES_DIR / "bgnbd_standard.nc").exists():
+        print("  Loading saved model...")
+        models["bgnbd"] = load_bgnbd("bgnbd_standard")
     else:
-        model = build_bgnbd(customers)
-        traces["bgnbd"] = fit_model(model, save_name="bgnbd_standard", **SAMPLING_CONFIG)
-
-    # 2b. Hierarchical BG/NBD ─────────────────────────────────────────────────
-    print("\n── 2b. Hierarchical BG/NBD (per country segment) ────────────")
-    trace_path = TRACES_DIR / "bgnbd_hierarchical.nc"
-    if skip_sampling and trace_path.exists():
-        print("  Loading saved trace...")
-        traces["bgnbd_hier"] = load_trace("bgnbd_hierarchical")
-    else:
-        model_hier = build_hierarchical_bgnbd(customers)
-        traces["bgnbd_hier"] = fit_model(
-            model_hier, save_name="bgnbd_hierarchical", **SAMPLING_CONFIG
+        models["bgnbd"] = fit_bgnbd(
+            customers, priors=priors["bgnbd"], save_name="bgnbd_standard",
+            **SAMPLING_CONFIG,
         )
 
-    # 2c. Gamma-Gamma (monetary) ──────────────────────────────────────────────
-    print("\n── 2c. Gamma-Gamma (monetary value) ─────────────────────────")
-    trace_path = TRACES_DIR / "gamma_gamma.nc"
-    if skip_sampling and trace_path.exists():
+    # 2b. Hierarchical BG/NBD (custom, per country segment) ────────────────────
+    print("\n── 2b. Hierarchical BG/NBD (per country segment) ────────────")
+    if skip_sampling and (TRACES_DIR / "bgnbd_hierarchical.nc").exists():
         print("  Loading saved trace...")
-        traces["gamma_gamma"] = load_trace("gamma_gamma")
+        models["bgnbd_hier"] = load_hier_trace("bgnbd_hierarchical")
     else:
-        model_gg = build_gamma_gamma(customers)
-        traces["gamma_gamma"] = fit_model(
-            model_gg, save_name="gamma_gamma", **SAMPLING_CONFIG
+        # The hierarchical model needs a higher target_accept to control the
+        # small-segment funnel geometry.
+        hier_cfg = {**SAMPLING_CONFIG, "target_accept": 0.95}
+        models["bgnbd_hier"] = fit_hierarchical_bgnbd(
+            customers, save_name="bgnbd_hierarchical", **hier_cfg
+        )
+
+    # 2c. Gamma-Gamma (monetary, pymc-marketing) ──────────────────────────────
+    print("\n── 2c. Gamma-Gamma (monetary value) ─────────────────────────")
+    if skip_sampling and (TRACES_DIR / "gamma_gamma.nc").exists():
+        print("  Loading saved model...")
+        models["gamma_gamma"] = load_gamma_gamma("gamma_gamma")
+    else:
+        models["gamma_gamma"] = fit_gamma_gamma(
+            customers, priors=priors["gamma_gamma"], save_name="gamma_gamma",
+            **SAMPLING_CONFIG,
         )
 
     # Save posterior summaries ─────────────────────────────────────────────────
     print("\n── Posterior summaries ──────────────────────────────────────")
-    for name, trace in traces.items():
+    for name, fitted in models.items():
         try:
-            summary = summarise_trace(trace)
+            var_names = ["r", "alpha", "a", "b"] if name.startswith("bgnbd") else None
+            summary = summarise_trace(fitted, var_names=var_names)
             out = RESULTS_DIR / f"posterior_summary_{name}.csv"
             summary.to_csv(out)
             print(f"  {name}: saved to {out.name}")
         except Exception as e:
             print(f"  {name}: summary failed — {e}")
 
-    return traces
+    return models
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -345,7 +361,7 @@ def step_bayesian(customers: pd.DataFrame, skip_sampling: bool = False) -> dict:
 
 def step_bayesian_predictions(
     customers: pd.DataFrame,
-    traces: dict,
+    models: dict,
     t_future: float,
     n_samples: int = 2000,
 ) -> dict:
@@ -355,22 +371,18 @@ def step_bayesian_predictions(
 
     # Shared: Gamma-Gamma monetary predictions (used by both BG/NBD variants)
     print("\n── Gamma-Gamma monetary predictions ─────────────────────────")
-    monetary_samples, repeat_mask = predict_monetary_value(
-        traces["gamma_gamma"], customers, n_samples=n_samples
+    monetary_samples, repeat_mask = predict_spend(
+        models["gamma_gamma"], customers, n_samples=n_samples
     )
     print(f"  Repeat customers: {repeat_mask.sum():,} / {len(customers):,}")
     print(f"  Mean pred monetary: £{monetary_samples.mean():.2f}")
 
     # ── Standard BG/NBD ──────────────────────────────────────────────────────
     print("\n── Standard BG/NBD ──────────────────────────────────────────")
-    tx_bgnbd = predict_conditional_transactions(
-        traces["bgnbd"], customers,
-        t_future=t_future, n_samples=n_samples, hierarchical=False,
+    tx_bgnbd = predict_transactions(
+        models["bgnbd"], customers, t_future=t_future, n_samples=n_samples,
     )
-    p_alive_bgnbd = predict_p_alive(
-        traces["bgnbd"], customers,
-        n_samples=n_samples, hierarchical=False,
-    )
+    p_alive_bgnbd = predict_p_alive(models["bgnbd"], customers, n_samples=n_samples)
     clv_bgnbd = compute_clv_posterior(tx_bgnbd, monetary_samples, repeat_mask)
 
     print(f"  Mean predicted tx:  {tx_bgnbd.mean(axis=0).mean():.3f}")
@@ -387,13 +399,11 @@ def step_bayesian_predictions(
 
     # ── Hierarchical BG/NBD ──────────────────────────────────────────────────
     print("\n── Hierarchical BG/NBD ──────────────────────────────────────")
-    tx_hier = predict_conditional_transactions(
-        traces["bgnbd_hier"], customers,
-        t_future=t_future, n_samples=n_samples, hierarchical=True,
+    tx_hier = predict_transactions_hier(
+        models["bgnbd_hier"], customers, t_future=t_future, n_samples=n_samples,
     )
-    p_alive_hier = predict_p_alive(
-        traces["bgnbd_hier"], customers,
-        n_samples=n_samples, hierarchical=True,
+    p_alive_hier = predict_p_alive_hier(
+        models["bgnbd_hier"], customers, n_samples=n_samples,
     )
     clv_hier = compute_clv_posterior(tx_hier, monetary_samples, repeat_mask)
 
@@ -664,13 +674,16 @@ def step_decision_analysis(
 def step_plots(
     customers: pd.DataFrame,
     truth: pd.DataFrame,
-    traces: dict,
+    models: dict,
     bayesian_preds: dict,
     eval_results: list,
     targeting_sims: Optional[dict] = None,
     country_metrics: Optional[pd.DataFrame] = None,
 ) -> None:
     _section("STEP 7: GENERATING THESIS PLOTS")
+
+    # Diagnostic plots need InferenceData; pmm models expose it via get_idata().
+    idatas = {k: get_idata(v) for k, v in models.items()}
 
     y_true_tx    = truth["holdout_transactions"].values.astype(float)
     y_true_spend = truth["holdout_spend"].values.astype(float)
@@ -693,17 +706,17 @@ def step_plots(
 
     # ── MCMC diagnostics ─────────────────────────────────────────────────────
     _try(P.plot_trace,  "trace_bgnbd_standard",
-         traces["bgnbd"], ["r", "alpha", "a", "b"], "BG/NBD Standard")
+         idatas["bgnbd"], ["r", "alpha", "a", "b"], "BG/NBD Standard")
 
     _try(P.plot_rhat_summary, "rhat_bgnbd_standard",
-         traces["bgnbd"], "BG/NBD (Standard)")
+         idatas["bgnbd"], "BG/NBD (Standard)")
     _try(P.plot_rhat_summary, "rhat_bgnbd_hierarchical",
-         traces["bgnbd_hier"], "BG/NBD (Hierarchical)")
+         idatas["bgnbd_hier"], "BG/NBD (Hierarchical)")
     _try(P.plot_rhat_summary, "rhat_gamma_gamma",
-         traces["gamma_gamma"], "Gamma-Gamma")
+         idatas["gamma_gamma"], "Gamma-Gamma")
 
     _try(P.plot_posterior_pairs, "pairs_bgnbd",
-         traces["bgnbd"], ["r", "alpha", "a", "b"], "BG/NBD")
+         idatas["bgnbd"], ["r", "alpha", "a", "b"], "BG/NBD")
 
     # ── Calibration (all models, side by side) ────────────────────────────────
     cal_dict = {
@@ -752,11 +765,12 @@ def step_plots(
          y_true_tx, bayesian_preds["BG/NBD (Bayesian)"]["tx_posterior"])
 
     # ── Hierarchical shrinkage (forest plots) ─────────────────────────────────
-    seg_names = list(customers["country_segment"].unique())
+    # Use the posterior's own segment order so forest-plot labels line up.
+    seg_names = list(idatas["bgnbd_hier"].posterior.coords["segment"].values)
     for param in ["r", "alpha", "a", "b"]:
         _try(P.plot_hierarchical_segments,
              f"hierarchical_shrinkage_{param}",
-             traces["bgnbd_hier"], seg_names, param)
+             idatas["bgnbd_hier"], seg_names, param)
 
     # ── Decision-theoretic targeting (RQ3 / H3) ───────────────────────────────
     if targeting_sims:
@@ -815,11 +829,11 @@ def main():
     )
 
     # Step 2 — Bayesian models (MCMC)
-    traces = step_bayesian(customers, skip_sampling=args.skip_sampling)
+    models = step_bayesian(customers, skip_sampling=args.skip_sampling)
 
     # Step 3 — Bayesian predictions
     bayesian_preds = step_bayesian_predictions(
-        customers, traces, t_future, n_samples=args.n_samples
+        customers, models, t_future, n_samples=args.n_samples
     )
 
     # Step 4 — Classical baselines
@@ -838,7 +852,7 @@ def main():
 
     # Step 7 — Thesis plots
     step_plots(
-        customers, truth, traces, bayesian_preds, eval_results,
+        customers, truth, models, bayesian_preds, eval_results,
         targeting_sims=targeting_sims, country_metrics=country_metrics,
     )
 
@@ -852,7 +866,7 @@ def main():
     return {
         "customers"    : customers,
         "truth"        : truth,
-        "traces"       : traces,
+        "models"       : models,
         "bayesian_preds": bayesian_preds,
         "baseline_preds": baseline_preds,
         "eval_results" : eval_results,
