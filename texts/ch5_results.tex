@@ -86,7 +86,22 @@ H3 predicts that targeting customers by the posterior probability $P(\text{CLV} 
 
 \condfig{../outputs/figures/targeting_simulation_bg_nbd_bayesian.png}{0.95\linewidth}{Decision-theoretic targeting for the Bayesian model at the headline cost of \pounds 600. Left: cumulative net value by strategy and depth. Right: the net-value difference between the posterior-probability rule and the point estimate.}{fig:targeting-sim}
 
-The probability score is computed from the posterior \emph{predictive} distribution of realised CLV rather than from the posterior of \emph{expected} CLV. This distinction, the same one that governs interval coverage in Section~\ref{sec:results-uncertainty}, is decisive here: the posterior of the expectation reflects only parameter uncertainty and, on a dataset of this size, places $P(\text{CLV} > c)$ at essentially $0$ or $1$ for almost every customer, so the ranking degenerates into arbitrary tie-breaking and the rule spuriously appears to fail by more than $50\%$. Using the predictive distribution removes that artefact.
+The probability score is computed from the posterior \emph{predictive} distribution of realised CLV rather than from the posterior of \emph{expected} CLV. This distinction, the same one that governs interval coverage in Section~\ref{sec:results-uncertainty}, is decisive here: the posterior of the expectation reflects only parameter uncertainty and, on a dataset of this size, places $P(\text{CLV} > c)$ at essentially $0$ or $1$ for almost every customer, so the ranking degenerates into arbitrary tie-breaking and the rule spuriously appears to fail by more than $50\%$. Using the predictive distribution removes that artefact. Table~\ref{tab:h3_risk} makes the contrast concrete on the risk-sensitive metrics that the probability rule is meant to serve: at the headline cost and depth, the predictive probability rule matches the point estimate on both the hit rate (the share of targeted customers whose realised value exceeds the cost) and wasted spend (the cumulative shortfall on unprofitable targets), whereas the expected-CLV version of the same rule collapses on both.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Risk-sensitive targeting metrics at the headline cost of \pounds 600 and a targeting depth of $20\%$. \emph{Hit rate} is the fraction of targeted customers whose realised holdout value exceeds the intervention cost; \emph{wasted spend} is the cumulative shortfall on targeted customers who fall below it. The point-estimate rule and the posterior-\emph{predictive} probability rule are close on both; the probability rule computed from the posterior of \emph{expected} CLV instead collapses, illustrating the saturation artefact.}
+  \label{tab:h3_risk}
+  \begin{tabular}{lrr}
+    \toprule
+    Targeting rule & Hit rate & Wasted spend (\pounds) \\
+    \midrule
+    Point estimate, $\mathrm{E}[\text{CLV}]$            & $0.848$ & $55{,}040$ \\
+    $P(\text{CLV} > c)$, expected-CLV posterior         & $0.619$ & $144{,}738$ \\
+    $P(\text{CLV} > c)$, posterior predictive           & $0.827$ & $60{,}452$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 At the headline intervention cost of \pounds 600, the posterior-probability rule then captures \pounds 3.82M in cumulative net value at a targeting depth of $20\%$, against \pounds 3.89M for the point-estimate rule, a shortfall of only $1.7\%$. Across the swept cost grid (\pounds 100 to \pounds 2{,}000) and across targeting depths the two rules are, in practice, equivalent: the gap is within a few percentage points everywhere and turns marginally in the probability rule's favour at the highest costs and depths, where mis-targeting a customer whose realised value falls below the intervention cost becomes costly enough for its risk-aversion to matter. This near-parity is the expected outcome on reflection: ranking by posterior mean CLV is close to optimal for maximising \emph{total} realised value, so the additional tail information the probability rule exploits is not needed for that objective. For completeness, Figure~\ref{fig:lift} reports the conventional targeting-lift curves, which measure revenue captured as a function of targeting depth.
 
