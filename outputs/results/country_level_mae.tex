@@ -1,0 +1,16 @@
+% Requires \usepackage{booktabs}
+\begin{table}[htbp]
+\caption{Per-country transaction-prediction MAE by model (RQ2/H2).}
+\label{tab:country_mae}
+\begin{tabular}{lrrrrrr}
+\toprule
+ & $n$ & MAE: BG/NBD (Bayesian) & MAE: Hierarchical BG/NBD & MAE: Naive (mean) & MAE: RFM Heuristic & MAE: XGBoost (two-stage) \\
+Country &  &  &  &  &  &  \\
+\midrule
+United Kingdom & 4,152 & 1.741 & 1.741 & 3.079 & 2.291 & 2.114 \\
+Other & 242 & 1.695 & 1.653 & 3.618 & 2.499 & 2.057 \\
+Germany & 74 & 1.622 & 1.635 & 3.136 & 3.031 & 2.366 \\
+France & 54 & 2.223 & 2.318 & 3.529 & 3.586 & 2.329 \\
+\bottomrule
+\end{tabular}
+\end{table}

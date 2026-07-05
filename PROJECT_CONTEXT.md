@@ -323,6 +323,121 @@ divergence/R-hat numbers. If it converges acceptably → use it. If not, options
 (c) reconsider segmentation. **This is the main open technical risk.** Segments (from
 data): United Kingdom 4152, Other 242, Germany 74, France 54.
 
+## 7g. Methodology text to reconcile with pmm rewrite (do during fill-in)
+
+The model rewrite (§7f) changed the implementation, so parts of the methodology
+chapter now describe code that no longer exists. Update during the ch5/ch6 pass:
+- `ch4_methodology.tex:72-78`: "implemented ... as a \texttt{Potential}" and
+  "HalfNormal($\sigma=10$)" and "softplus transform" — update to: standard BG/NBD +
+  Gamma-Gamma via **pymc-marketing** (numerically stable Fader-Hardie form);
+  **data-informed** HalfNormal priors (see `src/priors.py`); hierarchical uses a
+  **log-normal** mapping `θ_s = exp(μ+σz)` (not softplus) with tight
+  `σ~HalfNormal(0.25)`; `target_accept=0.95`.
+- `thesis_clv.tex:517` (non-centred / Neal's funnel) is still accurate — the
+  small-segment funnel was real and the tight scale + non-centring resolved it (can
+  cite the observed drop in tree depth / 2 divergences as evidence).
+- `thesis_clv.tex:342` "fully Bayesian implementation of BG/NBD and Gamma-Gamma" is
+  still fine (pmm is PyMC/HMC).
+Framing: honest and defensible — "estimated with PyMC via the pymc-marketing library's
+numerically stable implementation." The novel hierarchical H2 model remains custom.
+
+## 7h. Pipeline STATUS: full run launched (2026-07-05)
+Full `run_all_models.py` running in background (task `b344dtf6t`). Config: pmm pooled
+(~70s) + hierarchical (~15 min, target_accept 0.95) + GG (~10s) + baselines (nested
+split) + eval + pretty tables + plots. Expect ~20 min. Watch diagnostics: pooled
+R-hat should be ~1.00; hierarchical ~1.004 with few divergences. On completion verify
+`outputs/results/*.csv|tex` + `outputs/figures/*.png` populated, then do ch5/ch6
+fill-in (§7b) + methodology reconcile (§7g) + build v4.
+
+## 7i. RESULTS ARE IN (2026-07-05) — pipeline runs clean, but 2 eval issues
+
+Full pipeline completed. All models converged 0 divergences (pooled R-hat 1.0014
+ESS 1923; hierarchical 1.0031 ESS 1097; GG 1.0024 ESS 1126). Outputs populated:
+`outputs/results/*.csv|tex` (15 tables) + `outputs/figures/*.png` (28, all fixed).
+
+**RQ1/H1 accuracy — strongly supported.** `metrics_comparison.csv`:
+| model | tx_mae | clv_gini | ndcg_100 |
+|---|---|---|---|
+| Hierarchical BG/NBD | 1.742 | 0.855 | 0.905 |
+| BG/NBD (Bayesian)   | 1.743 | 0.855 | 0.905 |
+| XGBoost (two-stage) | 2.117 | 0.801 | 0.534 |
+| RFM Heuristic       | 2.330 | 0.785 | 0.531 |
+| Naive (mean)        | 3.114 | 0.070 | 0.017 |
+Bayesian beats all baselines on error AND ranking. Hierarchical ≈ pooled (tight
+pooling; small segments differ little — see country table).
+
+**RQ2/H2 — weak/mixed.** `country_level_mae.csv`: hierarchical vs pooled tx-MAE:
+UK 1.7411 vs 1.7414 (tie), Other 1.653 vs 1.695 (hier better), Germany 1.635 vs
+1.622 (pooled better), France 2.318 vs 2.223 (pooled better). Partial pooling does
+NOT clearly help the small segments here → H2 likely "not / partially supported".
+
+**RQ3/H3 — pending read** of `targeting_simulation_bg_nbd_bayesian.csv` (values
+saved; interpret posterior-prob vs point at cost=20/depth=0.20).
+
+### TWO EVALUATION-DESIGN ISSUES (affect H1 uncertainty + activity claims)
+Both pre-existed in the old code; only visible now that the pipeline runs.
+1. **Coverage = 1.9%** (`credible_interval_coverage.csv`), mean width 0.15. The
+   "posterior predictive" fed to coverage is actually the posterior of the
+   *expected* transaction count E[X] (parameter uncertainty only), not a predictive
+   of the integer outcome. Proper fix: sample actual holdout counts per draw
+   (BG/NBD posterior predictive incl. count variability) → meaningful coverage.
+2. **P(alive) AUC = 0.41** (< random), recall 0.98 (`p_alive_evaluation.csv`). All
+   1,493 one-time buyers get P(alive)=1.0 by construction (BG/NBD: no repeat ⇒
+   can't have dropped out), which anti-correlates with holdout activity. Fix:
+   evaluate P(alive) discrimination on repeat customers (frequency>0) only, and/or
+   report the caveat.
+
+3. **H3 targeting FAILS spuriously — cost grid mis-scaled.** Posterior-prob rule
+   captures £1.07M vs point-estimate £4.40M at cost=£20/depth=0.20 (improvement
+   -75%, negative at every depth/cost). Cause: cost grid (£5/£20/£50) is tiny vs
+   CLV (mean £423, up to thousands), so `P(CLV>cost) ≈ 1` for almost everyone →
+   the probability ranking is uninformative and point-estimate wins. The
+   decision-theoretic advantage only appears when the cost threshold cuts through
+   the bulk of the CLV posteriors. Fix: scale `COST_GRID` / `PRIMARY_COST` to CLV
+   magnitude (e.g. £100/£300/£600) in `run_all_models.py`.
+
+**Decision needed from user** before ch5 fill-in: all THREE Bayesian-value
+evaluations (H1 uncertainty coverage, P(alive), H3 targeting) have setup/scaling
+issues that make the Bayesian advantage look worse than it is. Recommended: fix all
+three (posterior-predictive coverage; repeat-only P(alive); CLV-scaled cost grid),
+re-run `--skip-sampling`, then fill ch5. The H1 *accuracy* story stands regardless.
+These are evaluation-setup fixes, not model changes (traces are saved, so re-eval
+is ~2 min each).
+
+## 7j. FINAL RESULTS (2026-07-05) — eval fixes applied, verdicts settled
+
+All three evaluation issues fixed (commit 9b889a7) and pipeline re-run
+(`--skip-sampling`). Final, trustworthy numbers:
+
+- **H1 accuracy — SUPPORTED.** BG/NBD tx-MAE 1.743 (hier 1.742) vs XGBoost 2.117,
+  RFM 2.330, Naive 3.114; CLV-Gini 0.855 vs 0.80/0.78; NDCG@100 0.905 vs 0.53.
+- **H1 uncertainty — SUPPORTED.** Posterior-predictive coverage **0.893 / 0.894**
+  (nominal 0.90); CRPS 1.22; mean interval width now realistic. (Was 1.9% before
+  the posterior-predictive fix.)
+- **P(alive) — good.** On repeat customers: AUC **0.71**, AUC-PR 0.87, Brier 0.21.
+- **H2 pooling — MIXED / NOT clearly supported.** Per-country tx-MAE hier vs pooled:
+  UK tie, Other hier-better (1.653 vs 1.695), Germany pooled-better (1.635 vs 1.622),
+  France pooled-better (2.318 vs 2.223). Tight pooling ⇒ hier≈pooled; no consistent
+  small-segment gain.
+- **H3 targeting — NOT SUPPORTED.** `improvement_pct` (posterior-prob vs
+  point-estimate) is negative across the £100–2000 grid, approaching parity only at
+  very high cost (e.g. cost 1200/depth 0.20 = -2.2%; cost 600/depth 0.50 = 0.0%).
+  Honest reason: maximising *total captured value* is near-optimal under
+  expected-value (posterior-mean) ranking, so the risk-averse P(CLV>cost) rule
+  gives up value. The posterior's decision-value would appear under a risk-averse /
+  loss-minimising objective — good discussion point for Ch6.
+
+Balanced thesis story: H1 strong (accuracy + calibrated uncertainty), H2 mixed, H3
+negative (with a principled explanation). PRIMARY_COST=600, COST_GRID 100–2000.
+
+Result CSVs to read for exact fill-in values: `outputs/results/metrics_comparison.csv`,
+`credible_interval_coverage.csv`, `p_alive_evaluation.csv`, `country_level_mae.csv`,
+`targeting_simulation_bg_nbd_bayesian.csv`, `posterior_summary_*.csv`.
+
+**NOTE for ch5 prose:** update the H3 numbers — old prose says "headline cost £20"
+and "grid (£5, £20, £50)"; now £600 headline, grid £100–£2000. And ch5 currently
+frames H3 as expected-to-succeed; rewrite to the honest not-supported finding.
+
 ## 8. Remaining work (in order)
 
 1. **Wait for pipeline** → verify outputs + diagnostics per §7 acceptance checks.

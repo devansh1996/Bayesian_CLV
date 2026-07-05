@@ -1,0 +1,14 @@
+% Requires \usepackage{booktabs}
+\begin{table}[htbp]
+\caption{P(alive) evaluation: binary activity prediction metrics.}
+\label{tab:p_alive}
+\begin{tabular}{lrrrrrrr}
+\toprule
+ & Accuracy & Precision & Recall & F1 & AUC-ROC & AUC-PR & Brier \\
+Model &  &  &  &  &  &  &  \\
+\midrule
+BG/NBD (Bayesian) & 0.729 & 0.734 & 0.975 & 0.837 & 0.711 & 0.868 & 0.207 \\
+Hierarchical BG/NBD & 0.729 & 0.734 & 0.974 & 0.837 & 0.709 & 0.867 & 0.207 \\
+\bottomrule
+\end{tabular}
+\end{table}
