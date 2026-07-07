@@ -290,5 +290,49 @@ highest-value additions before the defense are the paired bootstrap (#1) and the
 
 ---
 
-*Document generated 2026-07-05 to preserve full session context; §14 added 2026-07-08.
+## 15. v7 — professor's second feedback round + GitHub (2026-07-08)
+
+The professor's comments (writing too long/repetitive; Harvard citation consistency +
+page numbers; unclear gap→hypotheses→methodology link; weak recent-literature
+engagement / unclear contribution; limitations & generalisability) were addressed in
+**`thesis_v7.pdf`** (59 pp, clean build, 0 biber warnings):
+
+1. **Concision:** Ch1 §1.2–1.3 cut ~50% (they duplicated Ch2's history); Ch2 pre-data
+   close and summary tightened; ch5 H2 verdict and ch6 RQ2/RQ3 findings de-duplicated.
+   Abstract now reports the actual findings and verdicts.
+2. **Citations:** consistency pass (chronological multi-cites, \textcite/\parencite
+   discipline). **No page numbers were invented** — the text contains no direct quotes,
+   so none are mandatory; user to add pinpoints from sources where the professor wants
+   them (candidates: `berger1985`, `gelmanhill2006`, `rossi2005`).
+3. **Gap→hypotheses→methodology:** Research Gap section rewritten as explicit
+   **Gap 1 (inference) / Gap 2 (structure) / Gap 3 (decisions)**, each wired to its RQ,
+   its methodology section, and its results section; matching link sentences added in
+   §1.4, end of Ch3, and Ch4 §design.
+4. **Recent literature + contribution:** new paragraph in §btyd-review engaging
+   `bachmann2021` (time-varying latent attrition / CLVTools) and `valendin2022` (RNN
+   customer-base analysis); `angelopoulos2023` (conformal prediction) cited in §ml;
+   `pymcmarketing2024` software citation in ch4. Original-contribution statement added
+   (calibration-first evaluation; three-way pooling test; the expectation-vs-predictive
+   decision pitfall as a transferable methodological finding). **Metadata of all 4 new
+   entries to be user-verified.**
+5. **Limitations & generalisability:** Ch6 Limitations restructured into subsections
+   (Modelling Assumptions / Evaluation Design / Scope of the CLV Construct) + a new
+   §Generalisability. Folded in the audit findings: no significance tests (H2 gaps
+   third-decimal), tight-σ prior conditionality, 33% imputed spend, mid-decile
+   calibration bias, Poisson predictive approximation, XGBoost inner-split asymmetry,
+   B2B/wholesale mix, seasonal holdout, "CLV" = undiscounted 40.4-week revenue.
+6. **Factual fixes found during the audit:** ch4 claimed the H3 cost grid was
+   £5/£20/£50 (headline £20) — actual grid is £100–£2,000 (headline £600); Managerial
+   Implications still recommended the probability rule H3 rejected — reconciled.
+
+**GitHub:** repo pushed to **https://github.com/devansh1996/Bayesian_CLV** (default
+branch `main`; local branch renamed from `master`; the repo's auto-created LICENSE
+merged via `--allow-unrelated-histories`; duplicate remote `master` deleted). WSL git
+now uses the Windows Git Credential Manager
+(`credential.helper = /mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe`).
+`.obsidian/` added to `.gitignore`.
+
+---
+
+*Document generated 2026-07-05 to preserve full session context; §14–§15 added 2026-07-08.
 For the reference-form version and the exact next-step lists, see `PROJECT_CONTEXT.md` §0.*

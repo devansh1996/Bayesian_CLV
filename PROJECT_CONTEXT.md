@@ -1,4 +1,4 @@
-# PROJECT_CONTEXT.md — session handoff & full state (updated 2026-07-05)
+# PROJECT_CONTEXT.md — session handoff & full state (updated 2026-07-08)
 
 Reference document for the "fix shortcomings → produce real thesis results" effort.
 Companion docs: `CLAUDE.md` (repo instructions), memory `project_review_findings_2026-07.md`.
@@ -8,15 +8,36 @@ Sections §1–§7j are the historical narrative; **§0 below is the live status
 
 ## 0. CURRENT STATUS & NEXT STEPS (read this first)
 
-**DONE through thesis_v5.pdf (2026-07-05).** Pipeline runs end-to-end; all chapters
-filled with real results; H2/H3 analysis redesign implemented in code, data, AND prose;
-`thesis_v5.pdf` (59 pp) built with a clean log. Working tree clean. Final verdicts:
-**H1 supported, H2 partially supported, H3 not supported.** The "NEXT SESSION" list
-below is now COMPLETE (kept for provenance). Remaining open items are user-side only:
-verify the 4 added bib entries (`efron1975`, `rossi2005`, `berger1985`, `venkatesan2004`)
-and note to the supervisor that H2/H3 operationalisation was refined mid-thesis.
-Possible future polish: a dedicated 3-way (none/partial/complete) H2 figure; a
-`/code-review` or `prose-polish` pass on the rewritten Ch5/Ch6 sections.
+**DONE through thesis_v7.pdf (2026-07-08).** Pipeline runs end-to-end; all chapters
+filled with real results; final verdicts: **H1 supported, H2 partially supported,
+H3 not supported.** The repo is on GitHub: **https://github.com/devansh1996/Bayesian_CLV**
+(default branch `main`; WSL git authenticates via the Windows Git Credential Manager).
+
+- **v6** (2026-07-05): added the H3 risk-sensitive metrics table (hit rate, wasted spend).
+- **v7** (2026-07-08): professor's second feedback round. Ch1–2 prose tightened
+  (~50% cut in Ch1 §1.2–1.3, Ch1/Ch2 duplication removed); abstract now reports the
+  findings; Research Gap rewritten as an explicit Gap 1–3 → RQ → methodology chain
+  with an original-contribution statement; recent-literature engagement added
+  (`bachmann2021`, `valendin2022`, `angelopoulos2023`, `pymcmarketing2024`); Ch6
+  Limitations restructured (modelling / evaluation design / construct scope) plus a
+  new **Generalisability** section; Managerial Implications reconciled with the H3
+  verdict; **fixed a ch4 factual bug** (H3 cost grid is £100–£2,000 with headline
+  £600 — ch4 previously claimed £5–£50 with £20).
+- **Results audit (2026-07-08):** full read of `outputs/results/` against the code
+  produced `thesis work/Thesis Explainer.md` (reading document: data, model math,
+  verdict→evidence map, examiner-style critique) and §14 of
+  `thesis context/context.md`. All internal-consistency checks pass (e.g. Gamma-Gamma
+  implied mean spend £392 vs observed £385). Top two defense-prep items:
+  (1) a paired customer-level bootstrap for MAE differences (the H2 gaps are
+  third-decimal and carry no significance tests); (2) a prior-sensitivity check on
+  the hierarchical σ ~ HalfNormal(0.25), which partly constrains the H2 conclusion.
+
+**User-side open items:** verify all 8 added bib entries (`efron1975`, `rossi2005`,
+`berger1985`, `venkatesan2004`, `bachmann2021`, `valendin2022`, `angelopoulos2023`,
+`pymcmarketing2024`) against a reference manager; add page-number pinpoints where
+required (none were invented; the text contains no direct quotes); tell the supervisor
+about the mid-thesis H2/H3 operationalisation refinement. Optional polish: a 3-way
+H2 figure; the paired bootstrap; a σ prior-sensitivity appendix.
 
 ---
 
