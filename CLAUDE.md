@@ -117,7 +117,7 @@ After building, confirm a clean log: no `^!` errors, no "Citation ... undefined"
 
 **Last session's feedback revisions (in v3):** added Ch. 2 sections — *Probabilistic Models for Customer-Base Analysis* (Pareto/NBD → BG/NBD, Gamma-Gamma foreshadowing), *Foundations for the Hierarchical and Decision-Theoretic Extensions* (H2/H3 literature), and *Research Gap*; softened over-strong claims about ML uncertainty and "no existing approach"; added a source note to Table 2.1 (`tikz_evolution_table.tex`). Added 4 references to `references_clv.bib`: `efron1975`, `rossi2005`, `berger1985`, `venkatesan2004` — **user still to verify their metadata** against a reference manager.
 
-**Open item:** repo has **no git commits yet**; the thesis source and `thesis_vN.pdf` files are untracked. An initial commit was offered but not yet made. `.gitignore` already excludes LaTeX build artifacts (`*.aux`, `*.bcf`, `*.log`, etc.) and `.venv/` while keeping the versioned PDFs.
+**Git:** the repo is pushed to **https://github.com/devansh1996/Bayesian_CLV** (default branch `main`; the local branch was renamed from `master` to match). WSL git uses the Windows Git Credential Manager (`credential.helper` set globally). `.gitignore` excludes LaTeX build artifacts (`*.aux`, `*.bcf`, `*.log`, etc.), `.venv/`, and `.obsidian/` while keeping the versioned PDFs.
 
 # CLAUDE.md
 
