@@ -366,7 +366,7 @@ Three findings from this chapter carry forward:
 \chapter{Bayesian Probabilistic CLV Models}
 \label{ch:bayesian}
 
-This chapter provides an overview of the Bayesian probabilistic approach to predicting CLV, the central methodological focus of this thesis. The discussion begins by outlining essential Bayesian principles, then progresses to the specific generative models used in the empirical analysis, and concludes by examining the hierarchical extensions and decision-theoretic applications that constitute the thesis's main contributions.
+This chapter provides an overview of the Bayesian probabilistic approach to predicting CLV, the central methodological focus of this thesis. The discussion begins by outlining essential Bayesian principles, introduces the probability distributions from which the generative models are built and the priors placed on their parameters, then progresses to the specific generative models used in the empirical analysis, and concludes by examining the hierarchical extensions and decision-theoretic applications that constitute the thesis's main contributions.
 
 \section{Bayesian Inference Fundamentals}
 \label{sec:bayes-fundamentals}
@@ -389,7 +389,11 @@ where $p(\mathcal{D} \mid \theta)$ is the likelihood and the normalising constan
 \subsection{Markov Chain Monte Carlo and the NUTS Sampler}
 \label{sec:mcmc}
 
-For the majority of practically relevant models, including those in this thesis, it is not feasible to compute the posterior analytically. Contemporary Bayesian inference therefore typically employs Markov Chain Monte Carlo (MCMC) methods, which generate posterior samples that can approximate any desired summary, such as means, quantiles, or credible intervals. The empirical work here employs the No-U-Turn Sampler (NUTS), an adaptive form of Hamiltonian Monte Carlo (HMC) available within the PyMC probabilistic-programming library \parencite{hoffman2014, salvatier2016}. By leveraging gradient information, NUTS proposes more distant and less correlated samples, resulting in substantially more efficient exploration of the posterior, especially in complex, high-dimensional settings, than traditional random-walk Metropolis-Hastings algorithms.
+For the majority of practically relevant models, including those in this thesis, it is not feasible to compute the posterior analytically. Contemporary Bayesian inference therefore typically employs Markov Chain Monte Carlo (MCMC) methods, which generate posterior samples that can approximate any desired summary, such as means, quantiles, or credible intervals. The empirical work here employs the No-U-Turn Sampler (NUTS), an adaptive form of Hamiltonian Monte Carlo (HMC) available within the PyMC probabilistic-programming library \parencite{hoffman2014, salvatier2016}.
+
+HMC explores the posterior by exploiting its gradient rather than by blind random-walk proposals. The parameter vector is augmented with an auxiliary momentum variable, and the negative log-posterior is treated as a potential-energy surface: each iteration draws a fresh momentum, then simulates the resulting frictionless motion across the surface with a discrete \emph{leapfrog} integrator whose steps follow the gradient of the log-posterior. Because the simulated trajectory approximately conserves total energy, it can travel far from the current point and still be accepted with high probability, producing distant, weakly correlated samples where random-walk Metropolis-Hastings would diffuse slowly. NUTS removes the need to hand-tune the trajectory length by extending each trajectory, through repeated doubling, until it begins to turn back on itself, and its warm-up phase adapts the integrator step size toward a target acceptance rate while estimating the posterior's scale along each dimension \parencite{hoffman2014}.
+
+This mechanism explains both the efficiency of NUTS and its characteristic failure modes, several of which proved directly relevant to this thesis. The integrator's step size is dictated by the sharpest curvature of the posterior anywhere along a trajectory; geometries with strong parameter correlations (ridges), funnels, or wildly different scales across dimensions therefore force tiny steps and very long trajectories, and sampling cost explodes even for models with only a handful of parameters. The \emph{numerical formulation} of the likelihood matters for the same reason: two algebraically equivalent expressions can present very different energy surfaces, and intermediate quantities that overflow, cancel catastrophically, or become non-finite corrupt the gradient and energy computations on which the trajectory depends. The practical levers, employed in Chapter~\ref{ch:methodology}, follow directly: choose a numerically stable form of the likelihood, place priors whose scales match the data (Section~\ref{sec:priors-theory}), and reparameterise where the geometry itself is pathological, as in the hierarchical funnel discussed in Section~\ref{sec:noncentered}. Sections~\ref{sec:specification} and~\ref{sec:inference} document how these considerations shaped the estimated models.
 
 The quality of MCMC inference is assessed through standard diagnostics reported in the empirical analysis:
 
@@ -400,6 +404,86 @@ The quality of MCMC inference is assessed through standard diagnostics reported 
   \item \textbf{Divergences.} Occur when the NUTS sampler encounters regions of high curvature, signalling possible model misspecification or the need for reparameterisation.
 \end{itemize}
 
+\section{Probability Distributions for Modelling Customer Behaviour}
+\label{sec:distributions}
+
+The generative models of this chapter are assembled from a small set of standard probability distributions, each selected because its mathematical form mirrors a specific behavioural assumption. The models share a common two-layer logic: an \emph{individual-level} process distribution describes what a single customer does (how often they buy, when they defect, how much they spend), and a \emph{population-level} mixing distribution describes how the parameters of that process vary across customers. This section introduces the building blocks and their roles; Sections~\ref{sec:bgnbd} and~\ref{sec:gg} then show how the BG/NBD and Gamma-Gamma models assemble them.
+
+\subsection{Purchase Timing and Counts: Poisson, Exponential, and Gamma}
+\label{sec:dist-counts}
+
+The elementary assumption about purchasing is that an active customer buys ``at random'' at a constant underlying rate $\lambda$: purchase occasions arrive according to a Poisson process. The number of transactions $X(t)$ in a window of length $t$ then follows a Poisson distribution,
+
+\begin{equation}
+  P\big(X(t) = k \mid \lambda\big) = \frac{(\lambda t)^k e^{-\lambda t}}{k!}, \qquad k = 0, 1, 2, \ldots,
+  \label{eq:poisson}
+\end{equation}
+
+and the times between successive purchases are exponentially distributed with the same rate. The exponential distribution is \emph{memoryless}: the time already elapsed since the last purchase carries no information about when the next one is due. This property is what makes the Poisson assumption appropriate for non-contractual retail purchasing, where there is no billing cycle or scheduled renewal imposing a rhythm on transactions, and it is precisely the property that forces latent attrition to be modelled separately, since a long silence is equally consistent with a slow-but-active customer and a departed one.
+
+A single rate $\lambda$ for all customers would, however, contradict a robust empirical regularity: observed purchase counts are strongly \emph{over-dispersed}, with variance far exceeding the mean, because customer bases mix frequent and occasional buyers. The standard remedy is to let the rate itself vary across customers according to a Gamma distribution, $\lambda \sim \text{Gamma}(r, \alpha)$, with shape $r$ and rate $\alpha$. The Gamma distribution is the natural mixing choice for a positive rate: it is flexibly right-skewed, spans shapes from strongly peaked to near-exponential, and is conjugate to the Poisson likelihood, which keeps the mixture analytically tractable. Integrating the individual rate out of Equation~\eqref{eq:poisson} yields the negative binomial distribution (NBD) for the marginal purchase count,
+
+\begin{equation}
+  P\big(X(t) = k\big) = \int_0^\infty P\big(X(t) = k \mid \lambda\big)\, \text{Gamma}(\lambda \mid r, \alpha)\, d\lambda
+  = \frac{\Gamma(r + k)}{\Gamma(r)\, k!} \left(\frac{\alpha}{\alpha + t}\right)^{\!r} \left(\frac{t}{\alpha + t}\right)^{\!k},
+  \label{eq:nbd}
+\end{equation}
+
+whose variance exceeds its mean and which therefore reproduces the over-dispersion the pure Poisson model cannot. This Poisson-Gamma pair has a long history as a purchase-incidence model in marketing and supplies the ``NBD'' component of both the Pareto/NBD and the BG/NBD \parencite{schmittlein1987, fader2005}.
+
+\subsection{Dropout: Geometric and Beta}
+\label{sec:dist-dropout}
+
+Latent attrition requires a second process. The BG/NBD models dropout as a Bernoulli trial after every purchase: with probability $p$ the customer becomes permanently inactive, with probability $1-p$ they continue. The number of purchases a customer makes before defecting is then geometrically distributed, so the probability of surviving $j$ purchases, $(1-p)^j$, declines geometrically. The geometric distribution is the discrete counterpart of the exponential lifetime assumed by the Pareto/NBD \parencite{schmittlein1987}; tying dropout opportunities to purchase occasions rather than to continuous time is exactly the simplification that makes the BG/NBD likelihood tractable \parencite{fader2005}.
+
+As with purchase rates, dropout propensities differ across customers, and the mixing distribution must respect the parameter's support: $p$ is a probability confined to $[0, 1]$. The canonical choice is the Beta distribution, $p \sim \text{Beta}(a, b)$, with density proportional to $p^{a-1}(1-p)^{b-1}$. Its two shape parameters accommodate loyal-dominated populations (mass near zero), churn-prone populations (mass near one), and polarised mixtures of both, and it is conjugate to the Bernoulli dropout trials. The resulting Beta-Geometric mixture is the ``BG'' component of the model's name.
+
+\subsection{Monetary Value: the Gamma-Gamma Compound}
+\label{sec:dist-spend}
+
+Transaction values in retail data are positive and heavily right-skewed: most baskets are modest while a minority are very large. The Gamma distribution is again the natural individual-level model, with each customer's average transaction value drawn from a Gamma distribution whose scale is customer-specific. Placing a second Gamma distribution on that customer-specific parameter produces the Gamma-Gamma compound of \textcite{fader2013}: the population-level marginal distribution of average spend is then heavier-tailed than any single Gamma, matching the pronounced skew of observed spending, while individual-level estimates are shrunk toward the population mean in proportion to how few transactions support them. Section~\ref{sec:gg} presents the full specification.
+
+Table~\ref{tab:distributions} summarises the building blocks and the behavioural assumption each encodes.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Probability distributions used in the generative CLV models and the behavioural role of each.}
+  \label{tab:distributions}
+  \begin{tabularx}{\linewidth}{@{}l l Y@{}}
+    \toprule
+    \textbf{Distribution} & \textbf{Level} & \textbf{Behavioural role} \\
+    \midrule
+    Poisson & Individual & Number of purchases by an active customer in a fixed window \\
+    \addlinespace
+    Exponential & Individual & Memoryless inter-purchase times implied by the Poisson process \\
+    \addlinespace
+    Geometric & Individual & Number of purchases before permanent dropout \\
+    \addlinespace
+    Gamma & Population & Heterogeneity in purchase rates $\lambda$ (yielding the NBD); heterogeneity in spend parameters (yielding the Gamma-Gamma) \\
+    \addlinespace
+    Beta & Population & Heterogeneity in dropout probabilities $p$ on $[0,1]$ \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{The Building Blocks in the Study Data}
+\label{sec:dist-data}
+
+These distributional choices are not merely mathematically convenient; each corresponds to an empirical signature clearly visible in the UCI Online Retail II calibration sample analysed in this thesis (the dataset and its preparation are described in Chapter~\ref{ch:methodology}). Consider first the purchase counts. The 4,522 calibration customers average 3.78 repeat purchases over a mean observation window of 41.8 weeks, an average purchase rate of roughly 0.08 per week, or one purchase every 13 weeks. The variance of the repeat-purchase count, however, is 77.7, more than twenty times the mean, where a common-rate Poisson model would require variance equal to the mean. The frequency distribution (Figure~\ref{fig:freqdist}) makes the source of this over-dispersion plain: a large mass of customers with very few purchases coexists with a long right tail reaching 200 repeat transactions. This is exactly the regime the Gamma-mixed Poisson of Section~\ref{sec:dist-counts} is built for, with the caveat that the most extreme frequencies belong to trade and wholesale buyers whose ordering is more regular than a Poisson process implies, a point taken up in the limitations of Chapter~\ref{ch:conclusion}.
+
+The dropout components are equally visible. Fully 1,493 customers, 33.0\% of the calibration sample, made no repeat purchase at all. Under the generative story of Section~\ref{sec:dist-dropout}, this mass at zero conflates two indistinguishable populations: customers who defected immediately after their first purchase and customers who remain active but buy slowly. Resolving that ambiguity probabilistically, rather than by an arbitrary recency cut-off, is precisely what the Beta-Geometric dropout structure combined with the memoryless transaction process enables, and it is why the $P(\text{alive})$ quantity of Section~\ref{sec:bgnbd-outputs} exists at all. Fitting this sample requires the Beta heterogeneity distribution to accommodate both a churn-prone mass consistent with the one-third of one-time buyers and the loyal tail that generates the long purchase histories.
+
+Monetary values show the skew the Gamma-Gamma compound presumes. Among the 3,029 repeat purchasers, the mean average transaction value is \pounds 385 against a median of \pounds 299, with a 95th percentile of \pounds 900 and a maximum above \pounds 8,400 (Figure~\ref{fig:monetarydist}): a distribution whose mean sits well above its median and whose tail spans an order of magnitude. The Gamma-Gamma independence assumption also looks tenable at first inspection, with a frequency--monetary correlation of only $0.13$ among repeat purchasers; this condition is examined formally in Section~\ref{sec:gg-independence}. Finally, the pronounced segment imbalance of the sample, 4,152 UK customers against 74 in Germany and 54 in France, foreshadows why the hierarchical extension of Section~\ref{sec:hierarchical}, and with it the prior choices discussed next, matter for this dataset.
+
+\subsection{Prior Distributions}
+\label{sec:priors-theory}
+
+A conceptual distinction matters here. The Gamma and Beta mixing distributions of the preceding subsections are \emph{part of the likelihood}: they describe real heterogeneity across customers, and their parameters $(r, \alpha, a, b)$ are population quantities to be estimated. In the classical treatment these are fitted by maximum likelihood and the analysis stops there. The Bayesian treatment adds a further layer: \emph{prior distributions} on the population parameters themselves, expressing uncertainty about the customer base as a whole before the data are observed. It is this layer that Bayes' theorem (Equation~\eqref{eq:bayes}) updates, and it is what allows parameter uncertainty to propagate into every downstream prediction.
+
+This thesis employs \emph{weakly informative} priors \parencite{gelman2013}: distributions that respect each parameter's support and rule out absurd values without materially constraining the plausible range. All population parameters of the BG/NBD and Gamma-Gamma models are positive, so they receive half-normal priors, whose support is $[0, \infty)$ and whose mass declines gently away from zero, providing mild regularisation while permitting large values if the data demand them. The critical practical question is the \emph{scale} of these priors, because the parameters carry units: purchase-rate parameters are of order one on a weekly time scale, whereas the Gamma-Gamma scale parameter is denominated in pounds and must be of the order of hundreds. A prior that ignores these units can concentrate its mass far from the region the data support, distorting inference and degrading sampler performance. The appropriate diagnostic is the \emph{prior predictive check} \parencite{gelman2013}: simulating data from the prior and likelihood alone and verifying that the implied behaviour (purchase counts, average spends) is of a plausible magnitude. Chapter~\ref{ch:methodology} describes how the prior scales used here are set from summary statistics of the calibration data, a data-informed variant of this logic with ample precedent in marketing applications of hierarchical Bayesian methods \parencite{rossi2005}.
+
+The hierarchical model of Section~\ref{sec:hierarchical} adds one further prior choice. There, the four BG/NBD parameters vary by country segment, with each segment's parameters drawn (on the log scale, ensuring positivity) from a common population distribution. The \emph{between-segment} standard deviation of that distribution receives its own half-normal hyperprior, and its scale governs how much pooling the model performs: a large scale approaches independent per-segment estimation, while a scale of zero collapses to complete pooling. The empirical implementation uses a deliberately tight scale, encoding the substantive expectation that purchasing behaviour differs only moderately across countries; the consequences of this choice for the H2 comparison, including its role as a caveat on the pooling results, are taken up in Chapters~\ref{ch:methodology} and~\ref{ch:conclusion}.
+
 \section{The BG/NBD Model for Purchase Frequency}
 \label{sec:bgnbd}
 
@@ -408,7 +492,7 @@ The Beta-Geometric/Negative-Binomial-Distribution (BG/NBD) model, proposed by \t
 \subsection{Generative Story}
 \label{sec:bgnbd-generative}
 
-The BG/NBD model specifies the following data-generating process for each customer:
+The BG/NBD model assembles the distributions of Section~\ref{sec:distributions} into the following data-generating process for each customer:
 
 \begin{itemize}
   \item \textbf{Transaction process.} While active, each customer makes purchases according to a Poisson process with individual-specific rate $\lambda$. The number of transactions in a period of length $t$ follows a Poisson distribution with mean $\lambda t$.
