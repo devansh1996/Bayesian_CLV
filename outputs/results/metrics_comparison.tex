@@ -1,7 +1,9 @@
 % Requires \usepackage{booktabs}
 \begin{table}[htbp]
+\centering
 \caption{Model comparison across transaction and CLV prediction metrics.}
 \label{tab:metrics_comparison}
+\begin{adjustbox}{max width=\linewidth}
 \begin{tabular}{lrrrrrrrrrr}
 \toprule
 Model & Tx MAE & Tx RMSE & Tx MAPE (\%) & Tx Spearman & Tx Gini & CLV MAE (\pounds) & CLV RMSE (\pounds) & CLV Gini & NDCG@100 & NDCG@500 \\
@@ -13,4 +15,5 @@ RFM Heuristic & 2.330 & 6.366 & 58.6 & 0.582 & 0.702 & 1,160.5 & 6,728.6 & 0.785
 Naive (mean) & 3.114 & 6.212 & 186.8 & -- & 0.052 & 1,619.6 & 6,854.3 & 0.070 & 0.017 & 0.061 \\
 \bottomrule
 \end{tabular}
+\end{adjustbox}
 \end{table}

@@ -35,6 +35,7 @@
 \usepackage{graphicx}
 \usepackage[dvipsnames]{xcolor}
 \usepackage{float}
+\usepackage{adjustbox}   % shrink over-wide result tables to \linewidth
 \graphicspath{{../outputs/figures/}{../outputs/eda/}{outputs/figures/}{outputs/eda/}}
 
 \definecolor{bayesblue}{RGB}{46,64,87}
@@ -87,6 +88,9 @@
 % ── Paragraph formatting ─────────────────────────────────────
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{6pt}
+% Let TeX accept slightly loose lines rather than overflow the margin
+% (e.g. when an unbreakable \texttt path lands at a line end).
+\setlength{\emergencystretch}{3em}
 
 % ── Section formatting ───────────────────────────────────────
 \usepackage{titlesec}
@@ -176,6 +180,76 @@ Customer Lifetime Value (CLV) is the expected net present value of all future ca
 \tableofcontents
 \listoffigures
 \listoftables
+
+% ============================================================
+% LIST OF ABBREVIATIONS
+% ============================================================
+\clearpage
+\chapter*{List of Abbreviations}
+\addcontentsline{toc}{chapter}{List of Abbreviations}
+
+\begin{longtable}{@{}p{2.6cm}p{\dimexpr\linewidth-3.1cm\relax}@{}}
+  \toprule
+  \textbf{Abbrev.} & \textbf{Expansion} \\
+  \midrule
+  \endhead
+  AUC      & Area under the ROC curve \\
+  BFMI     & Bayesian fraction of missing information \\
+  BG/NBD   & Beta-Geometric/Negative-Binomial-Distribution model \\
+  BTYD     & Buy-till-you-die (model family) \\
+  CLV      & Customer lifetime value \\
+  CRPS     & Continuous ranked probability score \\
+  ESS      & Effective sample size \\
+  HDI      & Highest-density interval \\
+  HMC      & Hamiltonian Monte Carlo \\
+  IPT      & Inter-purchase time \\
+  LOO-CV   & Leave-one-out cross-validation \\
+  MAE      & Mean absolute error \\
+  MAPE     & Mean absolute percentage error \\
+  MCMC     & Markov chain Monte Carlo \\
+  MLE      & Maximum-likelihood estimation \\
+  NBD      & Negative binomial distribution \\
+  NDCG     & Normalised discounted cumulative gain \\
+  NUTS     & No-U-Turn Sampler \\
+  RFM      & Recency, frequency, monetary (value) \\
+  RMSE     & Root mean squared error \\
+  RQ / H   & Research question / hypothesis \\
+  WAIC     & Widely applicable information criterion \\
+  \bottomrule
+\end{longtable}
+
+% ============================================================
+% NOTATION
+% ============================================================
+\clearpage
+\chapter*{Notation}
+\addcontentsline{toc}{chapter}{Notation}
+
+\begin{longtable}{@{}p{2.6cm}p{\dimexpr\linewidth-3.1cm\relax}@{}}
+  \toprule
+  \textbf{Symbol} & \textbf{Meaning} \\
+  \midrule
+  \endhead
+  $\lambda$          & Individual customer's Poisson purchase rate (per week) \\
+  $p$                & Individual dropout probability after a purchase (BG/NBD) \\
+  $r,\ \alpha$       & Shape and rate of the Gamma distribution mixing $\lambda$ across customers \\
+  $a,\ b$            & Shape parameters of the Beta distribution mixing $p$ across customers \\
+  $x$                & Frequency: number of \emph{repeat} purchases in the calibration window \\
+  $t_x$              & Recency: time from first to last calibration purchase (weeks) \\
+  $T$                & Length of the customer's observation window (weeks) \\
+  $m$                & Mean monetary value per repeat transaction \\
+  $p,\ q,\ \gamma$   & Population parameters of the Gamma-Gamma spend model \\
+  $\nu$              & Individual customer's Gamma-Gamma spend-rate parameter \\
+  $P(\text{alive})$  & Posterior probability a customer is still active at $T$ \\
+  $c$                & Per-customer intervention (targeting) cost \\
+  $\tau$             & Posterior-probability threshold in the targeting rule \\
+  $d$                & Discount rate in the deterministic CLV formula \\
+  $\theta$           & Generic parameter vector \\
+  $\mathcal{D}$      & Observed data \\
+  $\widehat{R}$      & Gelman--Rubin convergence diagnostic \\
+  \bottomrule
+\end{longtable}
+
 \clearpage
 \pagenumbering{arabic}
 
@@ -424,8 +498,10 @@ and the times between successive purchases are exponentially distributed with th
 A single rate $\lambda$ for all customers would, however, contradict a robust empirical regularity: observed purchase counts are strongly \emph{over-dispersed}, with variance far exceeding the mean, because customer bases mix frequent and occasional buyers. The standard remedy is to let the rate itself vary across customers according to a Gamma distribution, $\lambda \sim \text{Gamma}(r, \alpha)$, with shape $r$ and rate $\alpha$. The Gamma distribution is the natural mixing choice for a positive rate: it is flexibly right-skewed, spans shapes from strongly peaked to near-exponential, and is conjugate to the Poisson likelihood, which keeps the mixture analytically tractable. Integrating the individual rate out of Equation~\eqref{eq:poisson} yields the negative binomial distribution (NBD) for the marginal purchase count,
 
 \begin{equation}
-  P\big(X(t) = k\big) = \int_0^\infty P\big(X(t) = k \mid \lambda\big)\, \text{Gamma}(\lambda \mid r, \alpha)\, d\lambda
-  = \frac{\Gamma(r + k)}{\Gamma(r)\, k!} \left(\frac{\alpha}{\alpha + t}\right)^{\!r} \left(\frac{t}{\alpha + t}\right)^{\!k},
+\begin{split}
+  P\big(X(t) = k\big) &= \int_0^\infty P\big(X(t) = k \mid \lambda\big)\, \text{Gamma}(\lambda \mid r, \alpha)\, d\lambda \\
+  &= \frac{\Gamma(r + k)}{\Gamma(r)\, k!} \left(\frac{\alpha}{\alpha + t}\right)^{\!r} \left(\frac{t}{\alpha + t}\right)^{\!k},
+\end{split}
   \label{eq:nbd}
 \end{equation}
 
@@ -474,6 +550,9 @@ These distributional choices are not merely mathematically convenient; each corr
 The dropout components are equally visible. Fully 1,493 customers, 33.0\% of the calibration sample, made no repeat purchase at all. Under the generative story of Section~\ref{sec:dist-dropout}, this mass at zero conflates two indistinguishable populations: customers who defected immediately after their first purchase and customers who remain active but buy slowly. Resolving that ambiguity probabilistically, rather than by an arbitrary recency cut-off, is precisely what the Beta-Geometric dropout structure combined with the memoryless transaction process enables, and it is why the $P(\text{alive})$ quantity of Section~\ref{sec:bgnbd-outputs} exists at all. Fitting this sample requires the Beta heterogeneity distribution to accommodate both a churn-prone mass consistent with the one-third of one-time buyers and the loyal tail that generates the long purchase histories.
 
 Monetary values show the skew the Gamma-Gamma compound presumes. Among the 3,029 repeat purchasers, the mean average transaction value is \pounds 385 against a median of \pounds 299, with a 95th percentile of \pounds 900 and a maximum above \pounds 8,400 (Figure~\ref{fig:monetarydist}): a distribution whose mean sits well above its median and whose tail spans an order of magnitude. The Gamma-Gamma independence assumption also looks tenable at first inspection, with a frequency--monetary correlation of only $0.13$ among repeat purchasers; this condition is examined formally in Section~\ref{sec:gg-independence}. Finally, the pronounced segment imbalance of the sample, 4,152 UK customers against 74 in Germany and 54 in France, foreshadows why the hierarchical extension of Section~\ref{sec:hierarchical}, and with it the prior choices discussed next, matter for this dataset.
+
+\paragraph{A customer to follow.}
+To make the abstract machinery concrete, one customer is followed through the entire pipeline. Customer~14817 (United Kingdom) made five purchases in the calibration window, hence a frequency of $x = 4$ repeat transactions, spending an average of \pounds 526 per repeat order, with a recency of $t_x = 33.1$ weeks inside an observation window of $T = 49.2$ weeks. This is a moderately active buyer whose activity status is genuinely uncertain: the model must decide how much of their fifteen-week silence before the calibration cut-off signals slow-but-active purchasing rather than silent defection. Their raw profile $(x, t_x, T, m)$ is the only input the BG/NBD~$+$~Gamma-Gamma model receives; Section~\ref{sec:worked-example} returns to them once the model is fitted, tracing how these four numbers become a $P(\text{alive})$ estimate, a full posterior distribution over their future value, and a concrete targeting decision.
 
 \subsection{Prior Distributions}
 \label{sec:priors-theory}

@@ -1,7 +1,9 @@
 % Requires \usepackage{booktabs}
 \begin{table}[htbp]
+\centering
 \caption{Targeting lift at various customer targeting depths.}
 \label{tab:targeting_lift}
+\begin{adjustbox}{max width=\linewidth}
 \begin{tabular}{lrrrrr}
 \toprule
  & BG/NBD (Bayesian) & Hierarchical BG/NBD & Naive (mean) & RFM Heuristic & XGBoost (two-stage) \\
@@ -14,4 +16,5 @@ Top-$k$ (\%) &  &  &  &  &  \\
 50.0 & 1.819 & 1.819 & 1.083 & 1.808 & 1.798 \\
 \bottomrule
 \end{tabular}
+\end{adjustbox}
 \end{table}

@@ -97,6 +97,40 @@ Four non-Bayesian baselines (\texttt{src/baselines.py}) contextualise the probab
   \item \textbf{Pareto/NBD (optional).} The maximum-likelihood predecessor to BG/NBD, included where the \texttt{lifetimes} library is available.
 \end{itemize}
 
+\subsection{The XGBoost Benchmark in Detail}
+\label{sec:xgboost}
+
+XGBoost is the strongest non-probabilistic competitor and therefore the most informative point of comparison for the Bayesian model, so its design is documented in full. Unlike the generative models, which read only the raw $(x, t_x, T, m)$ summaries, the gradient-boosted trees are given a rich engineered feature matrix. Twenty-four features are constructed per customer (\texttt{src/baselines.py}), grouped in Table~\ref{tab:xgb-features}: the core RFM summaries, derived ratios and interactions that expose non-linearities, behavioural flags, one-hot country indicators, and, most distinctively, transaction-rhythm features (inter-purchase-time statistics, day-of-week purchase fractions, and a within-window spend trend) that the parametric models have no mechanism to use.
+
+\begin{table}[htbp]
+  \centering
+  \caption{The 24 engineered features supplied to the XGBoost benchmark. The generative BG/NBD~$+$~Gamma-Gamma model, by contrast, uses only the four core RFM summaries.}
+  \label{tab:xgb-features}
+  \begin{tabularx}{\linewidth}{@{}l l Y@{}}
+    \toprule
+    \textbf{Group} & \textbf{Count} & \textbf{Features} \\
+    \midrule
+    Core RFM & 4 & frequency, recency, $T$, monetary value \\
+    \addlinespace
+    Ratios / interactions & 4 & recency ratio ($t_x/T$), purchase rate ($x/T$), inter-purchase time ($T/(x{+}1)$), $\log(1{+}\text{monetary})$ \\
+    \addlinespace
+    Behavioural flags & 3 & is-repeat, is-recent (recency ratio $>0.75$), high-value (top monetary quartile) \\
+    \addlinespace
+    Country dummies & 3 & one-hot country segment (first level dropped) \\
+    \addlinespace
+    Inter-purchase time & 2 & IPT mean, IPT standard deviation (days) \\
+    \addlinespace
+    Day-of-week & 7 & fraction of a customer's purchases on each weekday \\
+    \addlinespace
+    Spend trend & 1 & late-window vs.\ early-window mean revenue \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+The predictor is deliberately two-stage, mirroring the BG/NBD~$+$~Gamma-Gamma decomposition so that the Bayesian-versus-ML comparison isolates the modelling paradigm rather than the target definition: one gradient-boosted regressor predicts the holdout transaction count and a second, fitted on repeat purchasers only, predicts mean per-transaction spend, and their product is CLV. Both regressors use 300 trees of maximum depth 4, a learning rate of $0.05$, row and column subsampling of $0.8$, a squared-error objective, and early stopping after 30 rounds on a $15\%$ validation split.
+
+Preventing target leakage is essential for a fair comparison. Because XGBoost is supervised, it cannot be trained on the same holdout window on which it is scored. It is therefore fitted on a \emph{nested} temporal split \emph{inside} the calibration window (\texttt{build\_inner\_training\_set}): features are computed from the early calibration period and targets from a later inner window of \num{21.4} weeks, leaving the real \num{40.4}-week evaluation holdout entirely unseen, exactly as it is for the unsupervised models. This gives the tree models a shorter effective supervision horizon than the calibration window the Bayesian models exploit in full, an asymmetry revisited when interpreting the results (Section~\ref{sec:limitations-eval}).
+
 \section{Prediction}
 \label{sec:prediction}
 
@@ -124,6 +158,37 @@ Models are scored on the holdout period using a suite of metrics (\texttt{src/ev
   \end{tabularx}
 \end{table}
 
+Because several of these metrics are less familiar than MAE, Table~\ref{tab:metric-intuition} gives a one-line reading of what each captures and why it is relevant here, before the formal definitions that follow.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Evaluation metrics at a glance: plain-language intuition and why each is used.}
+  \label{tab:metric-intuition}
+  \begin{tabularx}{\linewidth}{@{}l Y@{}}
+    \toprule
+    \textbf{Metric} & \textbf{What it measures / why it matters here} \\
+    \midrule
+    MAE, RMSE       & Average size of the prediction error (RMSE penalises large misses more); lower is better \\
+    \addlinespace
+    MAPE            & Error as a percentage of the true value; readable but unstable when truths are near zero \\
+    \addlinespace
+    Spearman        & Whether the model \emph{ranks} customers in the right order, ignoring the exact values \\
+    \addlinespace
+    Gini            & Concentration of value the ranking captures; how well high-value customers rise to the top \\
+    \addlinespace
+    NDCG@$k$        & Quality of the \emph{top $k$} of the ranking specifically; the metric most aligned with targeting a limited budget \\
+    \addlinespace
+    Coverage        & Share of realised outcomes that fall inside the stated interval; should match the nominal level (e.g.\ $90\%$) \\
+    \addlinespace
+    Interval width  & Sharpness of the intervals; narrower is better \emph{only} if coverage is maintained \\
+    \addlinespace
+    CRPS            & Single score rewarding a predictive distribution that is both accurate and well calibrated; lower is better \\
+    \addlinespace
+    AUC, Brier      & Quality of $P(\text{alive})$ as an activity classifier: ranking (AUC) and probability calibration (Brier) \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
 \paragraph{Accuracy and ranking.}
 Mean absolute error and root mean squared error measure point accuracy for both holdout transactions and CLV; the Gini coefficient and Spearman correlation measure ranking quality, and NDCG@100 and NDCG@500 measure top-$k$ ranking relevant to targeting.
 
@@ -139,4 +204,4 @@ For H3, a targeting simulation ranks customers by (i) posterior mean CLV, (ii) t
 \section{Implementation and Reproducibility}
 \label{sec:implementation}
 
-The pipeline is implemented in Python using PyMC~5 for inference \parencite{salvatier2016}, the \texttt{pymc-marketing} library for the standard BG/NBD and Gamma-Gamma implementations \parencite{pymcmarketing2024}, ArviZ for posterior handling and diagnostics, scikit-learn and XGBoost for baselines, and Matplotlib for figures. The full analysis is orchestrated by \texttt{src/run\_all\_models.py}, which executes data preparation, MCMC sampling, prediction, evaluation, table generation, and plotting as a single reproducible sequence. All stochastic components use fixed seeds, posterior traces are serialised to NetCDF, and result tables are exported as both CSV and \LaTeX{} for direct inclusion in this document.
+The pipeline is implemented in Python using PyMC~5 for inference \parencite{salvatier2016}, the \texttt{pymc-marketing} library for the standard BG/NBD and Gamma-Gamma implementations \parencite{pymcmarketing2024}, ArviZ for posterior handling and diagnostics, scikit-learn and XGBoost for baselines, and Matplotlib for figures. The full analysis is orchestrated by \texttt{src/\allowbreak run\_all\_models.py}, which executes data preparation, MCMC sampling, prediction, evaluation, table generation, and plotting as a single reproducible sequence. All stochastic components use fixed seeds, posterior traces are serialised to NetCDF, and result tables are exported as both CSV and \LaTeX{} for direct inclusion in this document.

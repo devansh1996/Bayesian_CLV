@@ -1,7 +1,9 @@
 % Requires \usepackage{booktabs}
 \begin{table}[htbp]
+\centering
 \caption{Decision-theoretic targeting (BG/NBD (Bayesian)): posterior-probability vs point-estimate vs oracle net value, swept over intervention cost.}
 \label{tab:targeting_sim_bg_nbd_bayesian}
+\begin{adjustbox}{max width=\linewidth}
 \begin{tabular}{llrrrrrrr}
 \toprule
  &  & $n$ tgt. & Point (\pounds) & Posterior (\pounds) & Oracle (\pounds) & Random (\pounds) & Improvement (\pounds) & Improvement (\%) \\
@@ -49,4 +51,5 @@ Cost (\pounds) & Depth &  &  &  &  &  &  &  \\
 \cline{1-9}
 \bottomrule
 \end{tabular}
+\end{adjustbox}
 \end{table}

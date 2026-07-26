@@ -1,7 +1,9 @@
 % Requires \usepackage{booktabs}
 \begin{table}[htbp]
+\centering
 \caption{Posterior predictive credible interval coverage and CRPS.}
 \label{tab:coverage}
+\begin{adjustbox}{max width=\linewidth}
 \begin{tabular}{lrrr}
 \toprule
  & Coverage (90\%) & Mean width & CRPS \\
@@ -11,4 +13,5 @@ BG/NBD (Bayesian) & 0.893 & 4.586 & 1.223 \\
 Hierarchical BG/NBD & 0.894 & 4.588 & 1.222 \\
 \bottomrule
 \end{tabular}
+\end{adjustbox}
 \end{table}

@@ -260,7 +260,16 @@ def _save_results(
             label         = label,
             position      = "htbp",
         )
-        latex = "% Requires \\usepackage{booktabs}\n" + latex
+        # Add \centering and wrap the tabular in adjustbox so wide tables shrink
+        # to \linewidth instead of overflowing the page margin (requires
+        # \usepackage{adjustbox} in the thesis preamble).
+        latex = latex.replace(
+            "\\begin{tabular}",
+            "\\centering\n\\begin{adjustbox}{max width=\\linewidth}\n\\begin{tabular}", 1
+        ).replace(
+            "\\end{tabular}", "\\end{tabular}\n\\end{adjustbox}", 1
+        )
+        latex = "% Requires \\usepackage{booktabs}, \\usepackage{adjustbox}\n" + latex
         tex_path.write_text(latex, encoding="utf-8")
     except Exception as e:
         print(f"  LaTeX export warning ({stem}): {e}")
