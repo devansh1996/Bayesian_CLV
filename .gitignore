@@ -1,18 +1,25 @@
-data/processed/
-# Track pipeline result tables, figures and EDA plots; ignore everything else
-# under outputs/ (notably the large MCMC traces).
-outputs/*
-!outputs/eda/
-!outputs/results/
-!outputs/figures/
+# ── environments & caches ───────────────────────────────────────────────────
+.venv/
 .env
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-*.nc
-.venv/
 
-# LaTeX build artifacts (keep source .tex/.bib and versioned thesis_vN.pdf)
+# ── data ────────────────────────────────────────────────────────────────────
+# The raw UCI spreadsheet is public and large; see the README for the download.
+data/
+
+# ── pipeline outputs ────────────────────────────────────────────────────────
+# Track the result tables and figures; ignore traces, caches and built documents.
+outputs/*
+!outputs/results/
+!outputs/figures/
+outputs/results/*.tex
+outputs/results/*.npz
+*.nc
+
+# ── thesis document & build artefacts ───────────────────────────────────────
+texts/
 *.aux
 *.bcf
 *.bcf-SAVE-ERROR
@@ -27,14 +34,27 @@ __pycache__/
 *.out
 *.run.xml
 *.log
-texts/thesis.pdf
-texts/thesis_clv.pdf
-texts/pdflatex_out.txt
-texts/pdflatex_err.txt
 
-# Superseded working files (kept on disk, not tracked)
+# ── presentation & companion material (built from slides/) ──────────────────
+*.pptx
+*.pdf
+defence_*.html
+thesis_explained*.html
+audio/
+videos/
+deck/
+
+# ── editor, agent and personal working files ────────────────────────────────
+.vscode/
+.obsidian/
+.agents/
+.claude/
+skills-lock.json
+CLAUDE.md
+PROJECT_CONTEXT.md
+thesis work/
+thesis context/
 thesis_code (1).docx
 docx_extract.txt
 Thesis= Google.md
 compile_thesis.py
-.obsidian/
